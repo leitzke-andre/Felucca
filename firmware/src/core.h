@@ -35,11 +35,19 @@
 #if FELUCCA_ADPCM && !FELUCCA_SLICE
 #error "FELUCCA_ADPCM needs FELUCCA_SLICE (ADPCM is engine 14, after SLICE)"
 #endif
-#define NENGINES (13 + FELUCCA_SLICE + FELUCCA_ADPCM)   /* SLICE (13), then ADPCM (14): the other engines keep their
-                                                         * numbers */
+#ifndef FELUCCA_WAVESTORM
+#define FELUCCA_WAVESTORM 1      /* WaveStorm: the STORM engine (eng_wavestorm.c, vector synthesis + wave sequencing), engine 15 */
+#endif
+#if FELUCCA_WAVESTORM && !FELUCCA_SLICE
+#error "FELUCCA_WAVESTORM needs FELUCCA_SLICE (STORM is engine 15, after SLICE and ADPCM's 14)"
+#endif
+#define ENGI_RES14 (FELUCCA_WAVESTORM && !FELUCCA_ADPCM)   /* 14 is held for ADPCM (a placeholder, never offered) */
+#define NENGINES (13 + FELUCCA_SLICE + (FELUCCA_ADPCM || FELUCCA_WAVESTORM) + FELUCCA_WAVESTORM)
+                                 /* SLICE (13), then ADPCM (14), STORM (15): the other engines keep their numbers */
 #define ENGI_ADPCM 14u
+#define ENGI_WAVESTORM 15u
 #define ENGI_DIGITAL 1u          /* reserved without FELUCCA_FM4: never selectable (eng_ok), its sounds load as FM6 */
-#define NENG_SHOWN (NENGINES - !FELUCCA_FM4)   /* the engines one can pick: PRESETS, the EDIT layer, the editor,
+#define NENG_SHOWN (NENGINES - !FELUCCA_FM4 - ENGI_RES14)   /* the engines one can pick: PRESETS, the EDIT layer, the editor,
                                                 * in the display order of engines.c ENGINE_ORDER */
 #define UP_SLOTS 32u             /* user presets (upreset.c) */
 

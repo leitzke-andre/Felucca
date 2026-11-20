@@ -1687,7 +1687,7 @@ function makeMockDevice(opt = {}) {
     E("MIDI", ["USB", "TRS"], 0), E("SYNC", NDASH, 0), E("ROUT", ["CH1-4", "SEL", "CH5-8", "CH9-12", "CH13-16", "TRACK"], 0), D("CPU", F.INT, 0, 0, 0),
     D("SLOT", F.INT, 1, 4, 1), E("NAME", NDASH, 0), E("LOAD", NGO, 0), E("SAVE", NGO, 0),
     E("ENG", ["ANALOG", "-", "PHASE", "LOFI", "SAMPLE", "VOICE", "TRIO", "WHEEL",
-      "GRAIN", "PHYS", "DRUM", "NOISE", "FM6", "SLICE"], 0), E("SET", NGO, 0),
+      "GRAIN", "PHYS", "DRUM", "NOISE", "FM6", "SLICE", "--", "STORM"], 0), E("SET", NGO, 0),
     E("CLRSQ", NGO, 0), E("INIT", NGO, 0),
     E("TYPE", ["ROOM", "SPRING", "HALL"], 2),       /* G_RTYPE (id 24, was G_DRCH): the reverb's model (HALL: 1.2) */
     D("-", F.INT, 0, 0, 0), D("-", F.INT, 0, 0, 0),   /* G_DRLVL, G_DRREV: inert since 1.0 */
@@ -1695,6 +1695,8 @@ function makeMockDevice(opt = {}) {
   const NONE = D("-", F.INT, 0, 0, 0);
   const RATIO = [".5", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "14", "16"];
   const P = (name, e, env = [10, 70, 90, 60], mono = 0, pat = 0) => ({ name, e, env, mono, pat });
+  const WS_SRC = ["SINE", "TRI", "SAW", "SQR", "PLS25", "PLS10", "ORGAN", "HOLLW", "GLASS", "VOX-A", "VOX-O", "VOX-E", "SYNC", "FOLD", "BUZZ", "DIGI", "S-CYC", "S-ARP", "S-VOX", "S-PWM", "S-SHM", "S-RYT", "S-DIG", "S-HIT"];   /* STORM's corner sources (src/eng_wavestorm.c N_WS_SRC) */
+  const WS_PATH = ["OFF", "X-SWP", "Y-SWP", "CIRC", "FIG8", "BOX", "DIAM", "WANDR", "PLUCK", "SWELL"];
   const ENG = [
     { name: "ANALOG", titles: ["OSC", "FLT"], edit: [E("WAVE", ["SAW", "SQR", "TRI", "SIN", "PWM", "SYNC", "SUB"], 0), D("DTN", F.INT, 0, 127, 10, null, "ct"), D("MIX", F.PCT, 0, 127, 64),
         D("NOIS", F.PCT, 0, 127, 0), D("CUT", F.CUTOFF, 0, 127, 90), D("RES", F.PCT, 0, 127, 30), D("DRV", F.PCT, 0, 127, 0), D("KTR", F.PCT, 0, 127, 64)],
@@ -1774,6 +1776,32 @@ function makeMockDevice(opt = {}) {
         E("DIV", ["4", "8", "16", "32", "AUTO", "MAN"], 2), D("START", F.INT, 0, 31, 0), D("PTCH", F.SEMI, -24, 24, 0),
         E("MODE", ["ONE", "GATE", "LOOP"], 0), E("REV", ["OFF", "ON"], 0), D("DCAY", F.TIME, 0, 127, 127), D("TONE", F.INT, 0, 127, 127)],
       presets: [P("CHOP", [0, 2, 0, 0, 0, 0, 127, 127], [0, 127, 127, 30], 0, 9), P("STUTTER", [0, 1, 0, 0, 1, 0, 90, 110], [0, 127, 127, 12], 0, 10)] },
+    /* 14: held for ADPCM (not built) in a build with STORM (src/engines.c ENG_RES14) */
+    { name: "--", titles: ["-", "-"], edit: [D("-", F.INT, 0, 127, 0), D("-", F.INT, 0, 127, 0), D("-", F.INT, 0, 127, 0),
+        D("-", F.INT, 0, 127, 0), D("-", F.INT, 0, 127, 0), D("-", F.INT, 0, 127, 0), D("-", F.INT, 0, 127, 0), D("-", F.INT, 0, 127, 0)],
+      presets: [] },
+    /* 15: STORM (WaveStorm, src/eng_wavestorm.c): vector synthesis and wave sequencing */
+    { name: "STORM", titles: ["VECT", "WAVE"], edit: [D("X", F.PCT, 0, 127, 0), D("Y", F.PCT, 0, 127, 0),
+        D("PATH", F.ENUM, 0, 9, 0, WS_PATH), D("RATE", F.INT, 0, 127, 64),
+        D("WAV A", F.ENUM, 0, 23, 0, WS_SRC), D("WAV B", F.ENUM, 0, 23, 2, WS_SRC),
+        D("WAV C", F.ENUM, 0, 23, 1, WS_SRC), D("WAV D", F.ENUM, 0, 23, 3, WS_SRC)],
+      presets: [P("STORM PAD", [64, 40, 3, 40, 20, 16, 18, 19], [70, 90, 115, 90], 0, 5),
+        P("GLASS PAD", [50, 30, 7, 30, 0, 8, 1, 6], [80, 90, 110, 95], 0, 5),
+        P("VOX PAD", [64, 64, 5, 25, 9, 10, 11, 7], [75, 90, 115, 90], 0, 5),
+        P("DRIFT PAD", [64, 50, 4, 20, 1, 2, 0, 15], [85, 95, 110, 100], 0, 5),
+        P("VECT PLUCK", [10, 10, 8, 70, 1, 2, 0, 12], [0, 70, 30, 50], 0, 3),
+        P("GLASS KEYS", [20, 20, 8, 50, 0, 8, 1, 14], [2, 85, 40, 65], 0, 6),
+        P("HIT KEYS", [0, 0, 0, 64, 23, 3, 0, 2], [0, 80, 60, 50], 0, 6),
+        P("VECT BASS", [30, 0, 0, 64, 1, 2, 3, 12], [0, 60, 70, 25], 1, 2),
+        P("FOLD BASS", [20, 10, 8, 80, 0, 13, 1, 4], [0, 55, 80, 20], 1, 8),
+        P("VECT LEAD", [80, 30, 0, 64, 3, 2, 4, 12], [4, 70, 100, 40], 1, 4),
+        P("VOX LEAD", [64, 20, 2, 55, 9, 11, 2, 12], [6, 70, 100, 45], 1, 4),
+        P("SHIMMER", [0, 0, 0, 40, 20, 0, 0, 0], [60, 90, 120, 100], 0, 5),
+        P("VOWELS", [0, 30, 2, 35, 18, 18, 0, 1], [50, 90, 115, 85], 0, 5),
+        P("CYCLES", [64, 64, 6, 30, 16, 19, 16, 20], [60, 90, 115, 90], 0, 5),
+        P("RHYTHM", [0, 0, 0, 64, 21, 2, 0, 3], [0, 70, 110, 40], 0, 13),
+        P("ARP SEQ", [0, 20, 1, 64, 17, 17, 1, 0], [0, 70, 100, 40], 0, 13),
+        P("DIGI SEQ", [30, 60, 0, 64, 22, 21, 3, 13], [0, 70, 100, 35], 0, 13)] },
   ];
   const FM6_E = ENG.findIndex((e) => e.name === "FM6"), FM6_OWN = FM6.FACTORY_PK.length, DRUM_E = ENG.findIndex((e) => e.name === "DRUM");
   /* factory PATTERNS[] (engines.c; the device loads them from SAVE > PHRASES, presets only suggest one): absolute
@@ -2425,13 +2453,13 @@ function enumShown(d) {
 }
 
 /* the order the device shows its engines in (src/engines.c ENGINE_ORDER): the lists here follow it, the protocol keeps
-   the engine numbers. engineOrder(names): the indices of names in that order, "-" (a reserved number) left out; a name
+   the engine numbers. engineOrder(names): the indices of names in that order, "-" / "--" (reserved numbers) left out; a name
    the list does not know (another firmware) follows in index order */
 const ENGINE_ORDER = ["ANALOG", "FM6", "DIGITAL", "PHASE", "LOFI", "SAMPLE", "VOICE", "TRIO", "WHEEL", "GRAIN", "PHYS", "NOISE",
-  "SLICE", "DRUM"];
+  "SLICE", "DRUM", "STORM"];
 function engineOrder(names) {
   const rank = (n) => { const k = ENGINE_ORDER.indexOf(n); return k < 0 ? ENGINE_ORDER.length : k; };
-  return (names || []).map((n, i) => i).filter((i) => names[i] !== "-")
+  return (names || []).map((n, i) => i).filter((i) => !/^-+$/.test(names[i]))   /* "-", "--": reserved numbers */
     .sort((a, b) => rank(names[a]) - rank(names[b]) || a - b);
 }
 

@@ -80,6 +80,11 @@ static const char *const N_ENGNAME[] = {"ANALOG", FELUCCA_FM4 ? "DIGITAL" : "-",
 #endif
 #if FELUCCA_ADPCM
                                              "ADPCM",
+#elif ENGI_RES14
+                                             "--",
+#endif
+#if FELUCCA_WAVESTORM
+                                             "STORM",
 #endif
 };
 

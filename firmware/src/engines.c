@@ -47,6 +47,28 @@ static uint8_t eng_mem_owner[NPART];       /* engine index + 1 whose state is in
 #if FELUCCA_ADPCM
 #include "eng_adpcm.c"           /* ADPCM: BRR waves and an FIR echo, its DSP ported from snes_spc (adpcm_dsp.c, LGPL-2.1+) */
 #endif
+#if FELUCCA_WAVESTORM
+#include "eng_wavestorm.c"       /* STORM: WaveStorm's vector synthesis and wave sequencing (MIT) */
+#endif
+#if ENGI_RES14
+/* engine 14 without ADPCM in a build with STORM (15): held for ADPCM's sounds, never offered (eng_ok); a sound that
+ * names it plays nothing */
+static void res14_note_on(track_t *t, voice_t *v) { (void)t; (void)v; }
+static void res14_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
+{
+    (void)t; (void)v; (void)out; (void)n; (void)m;
+}
+static const engine_t ENG_RES14 = {
+    .name = "--",                /* (not "-", DIGITAL's: the editor reads a repeated name as an alias of the last one) */
+    .page_title = {"-", "-"},
+    .edit = {{"-", F_INT, 0, 127, 0, 0, 0}, {"-", F_INT, 0, 127, 0, 0, 0}, {"-", F_INT, 0, 127, 0, 0, 0},
+             {"-", F_INT, 0, 127, 0, 0, 0}, {"-", F_INT, 0, 127, 0, 0, 0}, {"-", F_INT, 0, 127, 0, 0, 0},
+             {"-", F_INT, 0, 127, 0, 0, 0}, {"-", F_INT, 0, 127, 0, 0, 0}},
+    .note_on = res14_note_on,
+    .render = res14_render,
+    .knob = {P_E0, P_E1, P_E2, P_REL},
+};
+#endif
 
 /* the editor protocol, user presets and projects store these indices: append, never reorder */
 static const engine_t *const ENGINES[NENGINES] = {
@@ -72,6 +94,11 @@ static const engine_t *const ENGINES[NENGINES] = {
 #endif
 #if FELUCCA_ADPCM
     &ENG_ADPCM,                  /* 14 (ENGI_ADPCM; FELUCCA_ADPCM=0 builds without it) */
+#elif ENGI_RES14
+    &ENG_RES14,                  /* 14: held for ADPCM (STORM is 15) */
+#endif
+#if FELUCCA_WAVESTORM
+    &ENG_WAVESTORM,              /* 15 (ENGI_WAVESTORM; FELUCCA_WAVESTORM=0 builds without it) */
 #endif
 };
 
@@ -136,11 +163,17 @@ static const uint8_t ENGINE_ORDER[NENG_SHOWN] = {
 #if FELUCCA_ADPCM
     14,                          /* ADPCM (1.8): last, so the EDIT layer's white keys keep the 13 above (ui_layer.c LY_ENG_KEYS) */
 #endif
+#if FELUCCA_WAVESTORM
+    15,                          /* STORM: after ADPCM, with PRESETS' ENG knob as ADPCM (the white keys keep the 13 above) */
+#endif
 };
 
 /* the engines one can pick (engine 1 only with FELUCCA_FM4), in ENGINE_ORDER: eng_ok(e), the n-th of them
  * eng_vis(n), e's place among them eng_rank(e), the next / previous one eng_step(e, dir) (wraps) */
-static int eng_ok(uint32_t e) { return e < NENGINES && (FELUCCA_FM4 || e != ENGI_DIGITAL); }
+static int eng_ok(uint32_t e)
+{
+    return e < NENGINES && (FELUCCA_FM4 || e != ENGI_DIGITAL) && !(ENGI_RES14 && e == ENGI_ADPCM);
+}
 static uint32_t eng_vis(uint32_t n) { return ENGINE_ORDER[n % NENG_SHOWN]; }
 static uint32_t eng_rank(uint32_t e)
 {

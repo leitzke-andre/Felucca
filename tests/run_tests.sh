@@ -473,6 +473,12 @@ if [ -f build/gen/felucca_tables.h ]; then
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/noise_test" tests/noise_test.c -lm
     mkdir -p build/noise_demo
     run "NOISE: colour slopes, key-tracked filter and clock, META period, DC, clipping, retrigger, cost, demos" "$OUT/noise_test" build/noise_demo
+    run "STORM (WaveStorm): the wave bank is what tools/gen_wavestorm.py writes" \
+        python3 tools/gen_wavestorm.py --check firmware/src/eng_wavestorm_waves.h
+    $CC -O2 -w -DFE_TABLES_H='"felucca_tables.h"' -Ibuild/gen -o "$OUT/wavestorm_test" tests/wavestorm_test.c -lm
+    mkdir -p build/wavestorm_demo
+    run "STORM (WaveStorm): presets, levels, release, X/Y sweep without clicks, every source and path, cost, demos" \
+        "$OUT/wavestorm_test" build/wavestorm_demo
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/fm6_test" tests/fm6_test.c -lm
     mkdir -p build/fm6_demo
     run "FM6: algorithms, envelopes, retrigger, DC, clipping, macros, patch formats, voices, cost, demos" "$OUT/fm6_test" build/fm6_demo
@@ -526,6 +532,8 @@ else
     run "Strict ASan/UBSan (no exclusions): signed_audio_scaling_test" "$A/signed_audio_scaling_test_strict"
     $STRICT_CC -o "$A/phys_signed_test_strict" tests/phys_signed_test.c -lm
     run "Strict ASan/UBSan (no exclusions): phys_signed_test" "$A/phys_signed_test_strict"
+    $STRICT_CC -DFE_TABLES_H='"felucca_tables.h"' -o "$A/wavestorm_test_strict" tests/wavestorm_test.c -lm
+    run "Strict ASan/UBSan (no exclusions): wavestorm_test" "$A/wavestorm_test_strict"
 
     $STRICT_CC -o "$A/uart_dma_test_strict" tests/uart_dma_test.c -lm
     run "Strict ASan/UBSan (no exclusions): uart_dma_test" "$A/uart_dma_test_strict"
