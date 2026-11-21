@@ -91,7 +91,7 @@ Each voice plays four corner sources A, B, C, D, blended by an X/Y position:
 ## Build, test, install
 
 ```sh
-./build.sh                                   # build/felucca.fwsc (Docker on macOS); PYTHON= a Python with Pillow
+./build.sh                                   # build/wavestorm.fwsc (Docker on macOS); PYTHON= a Python with Pillow
 sh tests/ws_tests.sh                         # every test (after ./build.sh)
 python3 tools/gen_wavestorm.py firmware/src/eng_wavestorm_waves.h            # after changing the waves
 sh web/emu/build.sh                          # the browser demo (Emscripten), after ./build.sh made build/gen
@@ -119,8 +119,8 @@ keys, 1..0 the buttons FX SCL ENV LFO EDIT GLO HOME SAVE ARP SEQ, `-` PLAY, `=` 
 Felucca's other 70-odd tests (its UI test and everything built on it, the engines', songs', projects', drums') were
 deleted with what they tested.
 
-Install as any Felucca build (see the main README): the package is still identified as Felucca, so Felucca's installer
-and the update entry take it. Test in the emulator first and have the recovery route ready before flashing a unit.
+Install `build/wavestorm.fwsc` as any Felucca build (see the main README): inside, the package is still identified as
+Felucca (`FM-1_900`), so Felucca's installer and the update entry take it. Test in the emulator first and have the recovery route ready before flashing a unit.
 
 ## Measured
 
@@ -139,7 +139,9 @@ with one part that borrowing read past the end of it.
 
 - **Not run on hardware.** CPU cost on the FM-1 is unmeasured (host figures: a STORM voice costs about as much as an
   ANALOG one); the worst case is 8 table reads a voice-sample.
-- **Identity:** the boot screen, ABOUT and the package still say Felucca.
+- **Identity:** the boot screen, ABOUT and the package file say WaveStorm; the package identity (`FM-1_900`), the USB
+  device name and the editor protocol's INFO still say Felucca, so Felucca's installers, update entry and editor keep
+  working.
 - **The bundled web editor** (`web/editor.html`) is Felucca's: it shows four tracks, projects, songs and samples that
   this build does not answer.
 - **On-device editing** of paths and sequences (the design's VECTOR PATH, CORNER and WAVESEQ pages), recording a path

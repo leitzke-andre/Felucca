@@ -58,6 +58,14 @@ int main(void)
     CHECK(str_eq(PAGES[page_first(FAM_GLO)].title, "CLOCK") && str_eq(PAGES[page_first(FAM_TRK)].title, "OUTPUT"),
           "GLO opens CLOCK; HOME's taps OUTPUT, then CLOCK");
 
+    /* ---- the name: the splash says WaveStorm, each line inside its square */
+    {
+        uint32_t k, fit = 1;
+        for (k = 0; k < sizeof SPLASH_LINES / sizeof SPLASH_LINES[0]; k++)
+            fit &= text_w(&AF_M, SPLASH_LINES[k]) <= SPL_SQ - 2 * SPL_PAD;
+        CHECK(str_eq(SPLASH_LINES[0], "WaveStorm") && fit, "the splash: WaveStorm, every line fits its square");
+    }
+
     /* ---- every family's button opens its pages on a tap (SEQ lost its with the SEQ TOOLS layer once) */
     {
         uint32_t f, bad = 0;

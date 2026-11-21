@@ -75,12 +75,12 @@ done
 $PC -o $H/storage_test tests/storage_test.c
 run "flash storage (A/B, torn writes)" $H/storage_test
 $PC -DOWN_PKG=1 -o $H/ota_test tests/ota_test.c
-run "M-UPGRADE entry (own loader)" $H/ota_test build/felucca.fwsc
+run "M-UPGRADE entry (own loader)" $H/ota_test build/wavestorm.fwsc
 if [ -d "$SDK" ]; then
     head -c 200000 build/felucca.bin > $H/old_app.bin
     AC79_SDK="$SDK" python3 tools/fm1pkg_make.py $H/old_app.bin build/loader/ota.bin $H/old.fwsc > /dev/null
     $PC -o $H/ldr_test tests/ldr_test.c
-    run "update loader: other app -> this build" $H/ldr_test $H/old.fwsc build/felucca.fwsc
+    run "update loader: other app -> this build" $H/ldr_test $H/old.fwsc build/wavestorm.fwsc
 else
     echo "== update loader: skipped (no JieLi AC79 SDK in AC79_SDK)"
 fi
