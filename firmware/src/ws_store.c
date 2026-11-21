@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 André Leitzke Junior */
-/* WaveStorm's storage (FELUCCA_WS_ONLY: project.c includes this instead of its own body). WaveStorm is a playable
+/* WaveStorm's storage (felucca.c includes it where Felucca had project.c). WaveStorm is a playable
  * synth, not a groovebox: there are no project slots or songs. What it keeps in flash:
  *   - the settings (MENU, the panel, favourites, MIDI LEARN: settings_persist.c, OBJ_SETTINGS), as Felucca;
  *   - the user presets (upreset.c): a sound with its 16-step pattern and arp settings;
@@ -8,14 +8,9 @@
  *     values, put back at power-on with MENU > SYSTEM > RESTORE LAST ON (the default). Written as Felucca's is
  *     (project.c: the autosave): only when it changed and then stayed the same for AS_IDLE_MS with nothing playing,
  *     at most one write every AS_GAP_MS, never while a note or the transport runs.
- * The functions the shared UI and editor code call for projects are here too, as an empty slot list (their pages
- * are not offered): the code that calls them stays as Felucca has it. */
-#define PROJ_NAME_LEN 12u
-#define PROJ_NO_SLOT 0xFFu
+ * There are no projects: user presets hold a sound with its pattern (upreset.c). */
 #define WS_STATE_MAGIC 0x31535357u               /* "WSS1" */
-#define WS_STATE_VER 1u
-static char proj_name[PROJ_NAME_LEN + 1u];       /* (always "": no projects) */
-static uint8_t proj_cur = PROJ_NO_SLOT;
+#define WS_STATE_VER 3u                 /* 2: the step without drum lanes or chance (8 bytes); 3: no project globals */
 
 typedef struct {
     uint32_t magic;
@@ -47,10 +42,8 @@ static void ws_steps(step_t *s)                  /* a loaded sequence inside its
         if (s[i].n > 4u) s[i].n = 4;
         if (s[i].time > ST_REST) s[i].time = ST_REST;
         for (j = 0; j < 4u; j++) s[i].note[j] &= 127u;
-        s[i].hit = s[i].acc = 0;                 /* (no drum lanes) */
-        s[i].flags &= 3u | SF_RATCH | SF_NUDGE;
+        s[i].flags &= SF_ACCENT | SF_SLIDE;
         s[i].vel &= 127u;
-        if (s[i].probability >= COND_FIRST + NCOND) s[i].probability = 0;
     }
 }
 
@@ -94,8 +87,7 @@ static void ws_restore(const ws_state_t *s)
     memset(motion_active, 0, sizeof motion_active);
     motion_base_valid = 0;
     for (i = 0; i < G_COUNT; i++)
-        if (i != G_SLOT && i != G_LOAD && i != G_SAVE)
-            song.g[i] = (int16_t)clamp(s->g[i], GP[i].min, GP[i].max);
+        song.g[i] = (int16_t)clamp(s->g[i], GP[i].min, GP[i].max);
     t->eng_req = ENGI_WAVESTORM;
     t->user = 0;
     for (i = 0; i < P_COUNT; i++)
@@ -112,33 +104,9 @@ static void ws_restore(const ws_state_t *s)
     ui.force = 1;
 }
 
-/* ---------------------------------------------------- projects: none (the calls the shared code makes) --- */
-static int proj_changed(void) { return 0; }
-static int project_used(uint32_t slot) { (void)slot; return 0; }
-static void project_load(uint32_t slot) { (void)slot; ui_message("NO PROJECTS"); }
-static int project_save_as(uint32_t slot, const char *name) { (void)slot; (void)name; ui_message("NO PROJECTS"); return 1; }
-static int project_save(uint32_t slot) { return project_save_as(slot, 0); }
-static void project_cur_name(char *b) { str_cpy(b, proj_name, PROJ_NAME_LEN + 1u); }
-static int project_info(uint32_t slot, char *b, uint16_t *len48, uint32_t *den, uint8_t *n)
-{
-    (void)slot;
-    b[0] = 0;
-    if (len48)
-        memset(len48, 0, NTRK * sizeof *len48);
-    if (den) {
-        memset(den, 0, NTRK * sizeof *den);
-        memset(n, 0, NTRK);
-    }
-    return 0;
-}
-static int project_name(uint32_t slot, char *b) { return project_info(slot, b, 0, 0, 0); }
-static int project_rename(uint32_t slot, const char *name) { (void)slot; (void)name; return 1; }
-static int project_erase(uint32_t slot) { (void)slot; return 1; }
-static uint32_t chain_prepare(void) { return 1; }   /* (no songs: SONG is not offered) */
-
 /* MENU > SYSTEM > CLEAR ALL: the power-on sound with no steps or automation, the global values their defaults. The
  * user presets, settings and MIDI LEARN stay. 0 done */
-static int project_new(void)
+static int clear_all(void)
 {
     ws_state_t *s = &ws_state;
     uint32_t i;
@@ -239,8 +207,7 @@ static uint32_t autosave_sig(void)               /* what an autosave would hold,
     h = ws_hash(h, &t->preset, 1);
     h = ws_hash(h, t->step, sizeof t->step);
     for (i = 0; i < G_COUNT; i++)
-        if (i != G_SLOT && i != G_NAME && i != G_LOAD && i != G_SAVE)
-            h = ws_hash(h, &song.g[i], sizeof song.g[i]);
+        h = ws_hash(h, &song.g[i], sizeof song.g[i]);
     return ws_hash(h, &motion, sizeof motion);
 }
 
@@ -254,8 +221,6 @@ static int autosave_quiet(void)                  /* nothing an erase (~40 ms of 
             return 0;
     return 1;
 }
-
-static void autosave_hold(void) { as.t = fm1_ms; }   /* the editor's transfers */
 
 static void autosave_poll(void)                  /* main loop, every pass (after settings_poll) */
 {

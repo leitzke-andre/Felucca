@@ -18,19 +18,11 @@ static uint8_t *fav_bit(uint32_t engine, uint32_t preset, uint8_t *mask)   /* th
         *mask = (uint8_t)(1u << (preset % 8u));
         return &favorites.factory[engine][preset / 8u];
     }
-#if FELUCCA_ADPCM
-    if (engine == ENGI_ADPCM && preset < 8u) {
-        *mask = (uint8_t)(1u << preset);
-        return &favorites.factory[15][13];
-    }
-#endif
-#if FELUCCA_WAVESTORM
     if (engine == ENGI_WAVESTORM && preset < 24u) {     /* STORM (WaveStorm): the end of SLICE's row, bytes 28..30 (SLICE
                                                          * would need 224 presets to reach them) */
         *mask = (uint8_t)(1u << (preset % 8u));
         return &favorites.factory[13][28u + preset / 8u];
     }
-#endif
     return 0;
 }
 static int favorite_has(uint32_t engine, uint32_t preset)

@@ -1,5 +1,8 @@
 # Felucca
 
+> **This branch is WaveStorm**, a vector synthesis + wave sequencing synth built on Felucca: see
+> [WAVESTORM.md](WAVESTORM.md). The rest of this page is Felucca's.
+
 [![License: GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-blue.svg)](LICENSE)
 
 Felucca is open-source custom synthesizer firmware for the **M-VAVE FM-1**.
@@ -31,7 +34,7 @@ Felucca is developed with the assistance of AI coding agents (code, tests, docum
 
 ## Credits and licence
 
-Felucca is free software under [GPL-3.0-only](LICENSE); the Hügelton Sample Pack is CC0 1.0. The engines and hardware layer retain their own licences. See [CREDITS.md](CREDITS.md) and [LICENSING.md](LICENSING.md).
+Felucca is free software under [GPL-3.0-only](LICENSE). The engines and hardware layer retain their own licences. See [CREDITS.md](CREDITS.md) and [LICENSING.md](LICENSING.md).
 
 M-VAVE and FM-1 are trademarks of their respective owners. Felucca is not affiliated with, endorsed by or supported by M-VAVE.
 

@@ -24,7 +24,7 @@
  *                takes it whole, then the keys edit it as any other).
  *   LEDs         every key that types or edits is lit; the key whose letters are being cycled blinks.
  * Spaces at either end are dropped when it is written; an empty name: USER the automatic one, PROJECT none. */
-enum { NK_NONE, NK_USER_SAVE, NK_USER_RENAME, NK_PROJ_SAVE, NK_PROJ_RENAME };
+enum { NK_NONE, NK_USER_SAVE, NK_USER_RENAME };
 #define NM_LEN 12u
 #define NM_TAP_MS 800u                                 /* multi-tap: the next letter within this */
 #define NM_REP_MS 450u                                 /* a held arrow / DELETE repeats after this, */
@@ -57,9 +57,8 @@ static void name_close(void)
         ui.force = 1;
     nm.kind = NK_NONE;
 }
-/* the keys: 2 = NAME's (silent), 1 = the DRUM grid, 3 = SONG's A..D (ui.c song_keys_on), 0 = notes (seq.c keyboard_block
- * reads song.grid) */
-static uint32_t keys_mode(void) { return name_on() ? 2u : grid_on() ? 1u : song_keys_on() ? 3u : 0u; }
+/* the keys: 2 = NAME's (silent), 0 = notes (seq.c keyboard_block reads song.grid) */
+static uint32_t keys_mode(void) { return name_on() ? 2u : 0u; }
 
 static const char *nm_group(uint32_t p)                /* white key place p's characters */
 {
@@ -88,7 +87,7 @@ static void name_open(uint32_t kind, uint32_t slot)
     nm.slot = (uint8_t)slot;
     nm.num = nm.key = nm.rep = 0;
     b[0] = 0;
-    if (kind == NK_USER_SAVE || kind == NK_USER_RENAME) {
+    {
         uint32_t e = kind == NK_USER_RENAME ? up_engine(slot) : TSEL->eng_req;
         up_auto_name(nm.ph, e, slot);
         if (kind == NK_USER_RENAME)
@@ -98,30 +97,22 @@ static void name_open(uint32_t kind, uint32_t slot)
         else
             str_cpy(b, nm.ph, sizeof b);
         nm.cat = (uint8_t)(kind == NK_USER_RENAME ? up_cat(slot) : track_cat(TSEL));
-    } else {
-        str_cpy(nm.ph, "PROJECT A", sizeof nm.ph);
-        nm.ph[8] = (char)('A' + (slot & 3u));
-        if (kind == NK_PROJ_RENAME)
-            project_name(slot, b);
-        else
-            project_cur_name(b);
     }
     str_cpy(nm.s, b, sizeof nm.s);
     nm.len = nm.cur = (uint8_t)str_len(nm.s);
     ui.force = 1;
 }
 
-/* SAVE > USER / PROJECT, EDIT: rename the selected slot */
+/* SAVE > USER, EDIT: rename the selected slot */
 static void name_rename(void)
 {
-    int user = cur_page()->graph == GR_USER;
-    uint32_t k = user ? ui.uslot : (uint32_t)song.g[G_SLOT] - 1u;
-    if (!(user ? up_used(k) : project_used(k)))
+    uint32_t k = ui.uslot;
+    if (!up_used(k))
         ui_message("EMPTY SLOT");
     else if (transport_busy())
         ui_message("STOP TO SAVE");
     else
-        name_open(user ? NK_USER_RENAME : NK_PROJ_RENAME, k);
+        name_open(NK_USER_RENAME, k);
 }
 
 static void nm_commit(void)                            /* the letter being cycled is kept: the cursor past it */
@@ -261,14 +252,8 @@ static void name_ok(void)
     case NK_USER_SAVE:
         up_ui_named(2, nm.slot, b, nm.cat);
         break;
-    case NK_USER_RENAME:
-        up_ui_named(3, nm.slot, b, nm.cat);
-        break;
-    case NK_PROJ_SAVE:
-        project_save_as(nm.slot, b);
-        break;
     default:
-        project_rename(nm.slot, b);
+        up_ui_named(3, nm.slot, b, nm.cat);
         break;
     }
     name_close();
@@ -332,7 +317,7 @@ static uint32_t name_leds(void)
 #define NM_CX(i) (12 + 18 * (int32_t)(i))              /* cell i: 18 x 22 at y 18 of the card */
 static void nm_title(char *b)
 {
-    str_cpy(b, nm.kind == NK_USER_SAVE || nm.kind == NK_PROJ_SAVE ? "SAVE " : "NAME ", 8);
+    str_cpy(b, nm.kind == NK_USER_SAVE ? "SAVE " : "NAME ", 8);
     if (nm.kind <= NK_USER_RENAME)
         up_slot_label(b + 5, nm.slot);
     else
@@ -432,7 +417,7 @@ static void nm_draw_foot(void)
 {
     khint_t a[3], b[3];
     int ok = !transport_busy();
-    a[0] = (khint_t){KC_OCTUP, nm.kind == NK_USER_SAVE || nm.kind == NK_PROJ_SAVE ? "SAVE" : "RENAME"};
+    a[0] = (khint_t){KC_OCTUP, nm.kind == NK_USER_SAVE ? "SAVE" : "RENAME"};
     a[1] = (khint_t){KC_OCTDN, "CANCEL"};
     a[2] = (khint_t){KC_K3, nm.kind <= NK_USER_RENAME ? "CATEGORY" : "RANDOM"};   /* (1.2: the category, a random name) */
     b[0] = (khint_t){KC_K1, "MOVE"};

@@ -10,9 +10,6 @@
  * MIDI CC 71 / 74 move X / Y; the heavy song plays. */
 #include "../web/emu/felucca_web.c"
 
-#if !FELUCCA_WS_ONLY
-#error "ws_synth_test: a WaveStorm build (FELUCCA_WS_ONLY)"
-#endif
 
 static int fails;
 #define CHECK(c, ...) do { if (!(c)) { fails++; printf("FAIL: " __VA_ARGS__); printf("\n"); } \
@@ -46,18 +43,37 @@ int main(void)
 
     /* ---- the instrument */
     CHECK(NTRK == 1u && NPART == 1u && NENGINES == 1u && ENGINES[0] == &ENG_WAVESTORM, "one part, STORM the only engine");
-    CHECK(ENGI_DRUM >= NENGINES && ENGI_FM6 >= NENGINES && ENGI_SAMPLE >= NENGINES && ENGI_DIGITAL >= NENGINES &&
-          ENGI_PHYS >= NENGINES, "the other engines' numbers are past ENGINES[] (ws_compat.c): never one of a track");
     CHECK(t->eng_req == ENGI_WAVESTORM && str_eq(ENGINES[0]->presets[t->preset].name, "STORM PAD"),
           "power-on sound: STORM PAD");
 
     /* ---- the pages */
     ok = 1;
-    for (i = 0; i < NPAGES; i++)
-        ok &= PAGES[i].graph != GR_SONG && PAGES[i].graph != GR_SLOTS && PAGES[i].graph != GR_TRK;
-    CHECK(ok, "no SONG, PROJECT or four-part MIXER page");
+    for (i = 0; i < NPAGES; i++) {                     /* (their page kinds are gone from params.c too) */
+        static const char *const GONE[] = {"SONG", "PROJECT", "MIXER", "SLICER", "SLICES", "LANES", "DETAIL", "FILTER"};
+        uint32_t g;
+        for (g = 0; g < sizeof GONE / sizeof GONE[0]; g++)
+            ok &= !str_eq(PAGES[i].title, GONE[g]);
+    }
+    CHECK(ok, "no SONG, PROJECT, MIXER, SLICER, LANES, DETAIL or FILTER page");
     CHECK(str_eq(PAGES[page_first(FAM_GLO)].title, "CLOCK") && str_eq(PAGES[page_first(FAM_TRK)].title, "OUTPUT"),
           "GLO opens CLOCK; HOME's taps OUTPUT, then CLOCK");
+
+    /* ---- every family's button opens its pages on a tap (SEQ lost its with the SEQ TOOLS layer once) */
+    {
+        uint32_t f, bad = 0;
+        for (f = FAM_HOME + 1u; f < FAM_COUNT; f++) {
+            if (FAM_BTN[f] == B_HOME)
+                continue;
+            web_buttons(1u << B_HOME); render_ms(120); web_buttons(0); render_ms(200);
+            web_buttons(1u << FAM_BTN[f]); render_ms(120); web_buttons(0); render_ms(200);
+            if (ui.home || cur_page()->fam != f) {
+                printf("      family %u (button %u) did not open\n", f, FAM_BTN[f]);
+                bad++;
+            }
+        }
+        web_buttons(1u << B_HOME); render_ms(120); web_buttons(0); render_ms(200);
+        CHECK(!bad, "ENV LFO FX SCL EDIT GLO SAVE ARP SEQ: a tap opens their pages");
+    }
 
     /* ---- every corner source of the 48-wave bank and the sequences: sounds, no clipping */
     {

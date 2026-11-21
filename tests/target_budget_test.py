@@ -22,24 +22,24 @@ OPTIONAL = ESTIMATOR["OPTIONAL"]
 class SpanFixtures(unittest.TestCase):
     def test_real_pi32v2_listing(self):
         fns = ESTIMATOR["functions"](HERE / "target_budget_fixtures" / "real_pi32v2.dis")
-        self.assertEqual(set(fns), {"dv_out"})
-        self.assertEqual(ESTIMATOR["cost"](fns["dv_out"]),
+        self.assertEqual(set(fns), {"perf_master"})
+        self.assertEqual(ESTIMATOR["cost"](fns["perf_master"]),
                          dict(insns=40, loop=35, div=0, call=0, cost=35))
 
     def test_loop_costs(self):
         fns = ESTIMATOR["functions"](HERE / "target_budget_fixtures" / "loops.dis")
         # Literal expected observations: insns, loop, div, call, cost.
         expected = {
-            "analog_render": (4, 2, 0, 0, 2),       # simple loop
-            "phase_render": (6, 4, 0, 0, 10),      # nested loop
-            "lofi_render": (7, 4, 0, 0, 4),        # siblings, no nesting
-            "sample_render": (6, 4, 0, 0, 4),      # split back edges, same head
-            "formant_render": (6, 4, 0, 0, 4),     # acyclic backward path: false positive
-            "trio_render": (5, 3, 0, 1, 3),        # callee's cost is not added
-            "trio_pass": (4, 3, 1, 0, 11),
-            "wheel_render": (5, 3, 1, 0, 11),       # outside divide gets no penalty
-            "grain_render": (4, 2, 0, 0, 2),       # ordinary instruction inside loop
-            "grain_block": (12, 10, 0, 0, 298),    # depth capped at four
+            "ws_render": (4, 2, 0, 0, 2),       # simple loop
+            "ws_run": (6, 4, 0, 0, 10),      # nested loop
+            "ws_tap": (7, 4, 0, 0, 4),        # siblings, no nesting
+            "ws_inc": (6, 4, 0, 0, 4),      # split back edges, same head
+            "click_render": (6, 4, 0, 0, 4),     # acyclic backward path: false positive
+            "perf_block": (5, 3, 0, 1, 3),        # callee's cost is not added
+            "perf_flanger": (4, 3, 1, 0, 11),
+            "perf_phaser": (5, 3, 1, 0, 11),       # outside divide gets no penalty
+            "rev_room": (4, 2, 0, 0, 2),       # ordinary instruction inside loop
+            "rev_hall": (12, 10, 0, 0, 298),    # depth capped at four
             "mod_begin": (3, 0, 0, 0, 0),          # no loop, even with call/divide
         }
         self.assertEqual(set(fns), set(expected))
@@ -51,23 +51,23 @@ class SpanFixtures(unittest.TestCase):
     def test_parser_boundaries_and_jump_table_data(self):
         with tempfile.TemporaryDirectory(dir=HERE.parent / "build") as tmp:
             dis = Path(tmp) / "parser.dis"
-            dis.write_text("""analog_render:
+            dis.write_text("""ws_render:
  100: 00 00  r0 = 0
 .Llocal:
  102: 00 00  r1 += 1
  104: 00 00  < 0 : 0x102 >
- 106: 00 00  if r1 < r2 goto -4 <analog_render: 102 >
+ 106: 00 00  if r1 < r2 goto -4 <ws_render: 102 >
 untracked_helper:
- 200: 00 00  call <analog_render>
-phase_render:
+ 200: 00 00  call <ws_render>
+ws_run:
 Disassembly of section .c1_text:
 mix_part:
  300: 00 00  ret
 """)
             self.assertEqual(ESTIMATOR["functions"](dis), {
-                "analog_render": [(0x100, "r0 = 0"), (0x102, "r1 += 1"),
-                                  (0x106, "if r1 < r2 goto -4 <analog_render: 102 >")],
-                "phase_render": [],
+                "ws_render": [(0x100, "r0 = 0"), (0x102, "r1 += 1"),
+                                  (0x106, "if r1 < r2 goto -4 <ws_render: 102 >")],
+                "ws_run": [],
                 "mix_part": [(0x300, "ret")],
             })
 
@@ -79,8 +79,8 @@ mix_part:
                         " 102: missing instruction bytes", " 102: 00 00  unknown_instruction r0",
                         " 102: 00 00  "):
                 with self.subTest(row=row):
-                    dis.write_text("analog_render:\n 100: 00 00  r0 = 0\n" + row + "\n")
-                    with self.assertRaisesRegex(ValueError, "analog_render: (unparsed|undecoded) instruction"):
+                    dis.write_text("ws_render:\n 100: 00 00  r0 = 0\n" + row + "\n")
+                    with self.assertRaisesRegex(ValueError, "ws_render: (unparsed|undecoded) instruction"):
                         ESTIMATOR["functions"](dis)
 
 
@@ -138,35 +138,35 @@ class CommandLineFixtures(unittest.TestCase):
         self.assertEqual(self.budget.read_bytes(), before)
 
     def test_tolerance_boundary_and_lower_cost_note(self):
-        self.write_budget(overrides={"analog_render": 10})
+        self.write_budget(overrides={"ws_render": 10})
         for count, status, message in ((11, 0, "ok"), (12, 1, "OVER BUDGET (+20 %"),
                                         (2, 0, "note: -80 %")):
             with self.subTest(loop_instructions=count):
-                self.write_dis(loops={"analog_render": count})
+                self.write_dis(loops={"ws_render": count})
                 result = self.cli()
                 self.assert_status(result, status)
-                row = next(line for line in result.stdout.splitlines() if "analog_render" in line)
+                row = next(line for line in result.stdout.splitlines() if "ws_render" in line)
                 self.assertIn(message, row)
 
     def test_missing_required_function_fails_even_on_update(self):
-        self.write_dis(omit=("analog_render",))
+        self.write_dis(omit=("ws_render",))
         for update in (None, "1"):
             with self.subTest(update=update):
                 result = self.cli(update=update)
                 self.assert_status(result, 1)
-                self.assertIn("FAIL analog_render not found", result.stdout)
-        self.assertNotIn("analog_render", self.budget.read_text())
+                self.assertIn("FAIL ws_render not found", result.stdout)
+        self.assertNotIn("ws_render", self.budget.read_text())
 
     def test_empty_required_function_is_missing(self):
-        self.write_dis(omit=("analog_render",))
+        self.write_dis(omit=("ws_render",))
         with self.dis.open("a") as f:
-            f.write("analog_render:\n")
+            f.write("ws_render:\n")
         result = self.cli()
         self.assert_status(result, 1)
-        self.assertIn("FAIL analog_render not found", result.stdout)
+        self.assertIn("FAIL ws_render not found", result.stdout)
 
     def test_missing_budget_entry_warns_but_passes(self):
-        self.write_budget(omit=("analog_render",))
+        self.write_budget(omit=("ws_render",))
         result = self.cli()
         self.assert_status(result, 0)
         self.assertIn("no budget (BUDGET_UPDATE=1 adds it)", result.stdout)
@@ -179,13 +179,13 @@ class CommandLineFixtures(unittest.TestCase):
         self.assertFalse(self.budget.exists())
 
     def test_undecoded_back_edge_fails_without_rewriting(self):
-        text = self.dis.read_text().replace("if r0 < r1 goto -2 <analog_render: 100 >", ".word 0xdeadbeef", 1)
+        text = self.dis.read_text().replace("if r0 < r1 goto -2 <ws_render: 100 >", ".word 0xdeadbeef", 1)
         self.dis.write_text(text)
         before = self.budget.read_bytes()
         for update in (None, "1"):
             result = self.cli(update=update)
             self.assert_status(result, 1)
-            self.assertIn("analog_render: undecoded instruction", result.stdout)
+            self.assertIn("ws_render: undecoded instruction", result.stdout)
             self.assertNotIn("note: -100 %", result.stdout)
             self.assertEqual(self.budget.read_bytes(), before)
 
@@ -193,16 +193,16 @@ class CommandLineFixtures(unittest.TestCase):
         for value in (-1, -9):
             for update in (None, "1"):
                 with self.subTest(value=value, update=update):
-                    self.write_budget(overrides={"analog_render": value})
+                    self.write_budget(overrides={"ws_render": value})
                     before = self.budget.read_bytes()
                     result = self.cli(update=update)
                     self.assert_status(result, 1)
-                    self.assertIn("invalid budget for analog_render", result.stdout)
+                    self.assertIn("invalid budget for ws_render", result.stdout)
                     self.assertNotIn("Traceback", result.stderr)
                     self.assertEqual(self.budget.read_bytes(), before)
 
     def test_zero_budget_reports_growth_without_dividing(self):
-        self.write_budget(overrides={"analog_render": 0})
+        self.write_budget(overrides={"ws_render": 0})
         result = self.cli()
         self.assert_status(result, 1)
         self.assertIn("OVER BUDGET (cost 2 exceeds zero baseline)", result.stdout)
@@ -210,11 +210,11 @@ class CommandLineFixtures(unittest.TestCase):
 
     def test_zero_cost_update_round_trip(self):
         text = self.dis.read_text()
-        start = text.index("analog_render:\n")
-        end = text.index("phase_render:\n", start)
-        self.dis.write_text(text[:start] + "analog_render:\n 100: 00 00  ret\n" + text[end:])
+        start = text.index("ws_render:\n")
+        end = text.index("ws_run:\n", start)
+        self.dis.write_text(text[:start] + "ws_render:\n 100: 00 00  ret\n" + text[end:])
         self.assert_status(self.cli(update="1"), 0)
-        self.assertIn("analog_render 0\n", self.budget.read_text())
+        self.assertIn("ws_render 0\n", self.budget.read_text())
         self.assert_status(self.cli(), 0)
 
     def test_extra_entry_ignored_and_short_line_skipped(self):
@@ -224,7 +224,7 @@ class CommandLineFixtures(unittest.TestCase):
         self.assertNotIn("untracked_helper", result.stdout)
 
     def test_non_numeric_budget_fails_before_update(self):
-        for line in ("analog_render not-a-number\n", "untracked_helper not-a-number\n"):
+        for line in ("ws_render not-a-number\n", "untracked_helper not-a-number\n"):
             for update in (None, "1"):
                 with self.subTest(line=line, update=update):
                     self.write_budget(extra=line)
@@ -255,14 +255,14 @@ class CommandLineFixtures(unittest.TestCase):
 
     def test_update_rewrites_required_only_then_checks(self):
         self.budget.unlink()
-        self.write_dis(extra=("uac_tap48",), loops={"analog_render": 12})
+        self.write_dis(extra=("uac_tap48",), loops={"ws_render": 12})
         result = self.cli(update="1")
         self.assert_status(result, 0)
         self.assertIn(f"rewritten ({len(self.required) + 1} functions)", result.stdout)
         self.assertNotIn("OVER BUDGET", result.stdout)
         rows = self.budget.read_text().splitlines()
         self.assertEqual([line for line in rows if not line.startswith("#")],
-                         [f"{name} {12 if name == 'analog_render' else 2}" for name in self.required])
+                         [f"{name} {12 if name == 'ws_render' else 2}" for name in self.required])
         self.assert_status(self.cli(), 0)
 
     def test_nonempty_zero_update_value_also_rewrites(self):
@@ -271,12 +271,12 @@ class CommandLineFixtures(unittest.TestCase):
         self.assertNotIn("untracked_helper", self.budget.read_text())
 
     def test_update_accepts_growth_against_existing_budget(self):
-        self.write_dis(loops={"analog_render": 12})
+        self.write_dis(loops={"ws_render": 12})
         self.assert_status(self.cli(), 1)
         result = self.cli(update="1")
         self.assert_status(result, 0)
         self.assertNotIn("OVER BUDGET", result.stdout)
-        self.assertIn("analog_render 12\n", self.budget.read_text())
+        self.assertIn("ws_render 12\n", self.budget.read_text())
         self.assert_status(self.cli(), 0)
 
     def test_missing_disassembly_skips_without_updating(self):

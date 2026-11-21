@@ -227,6 +227,10 @@ static uint32_t div_samples(uint32_t div)
     return div < 6u ? quarter / DIV_DEN[div] : div < 10u ? quarter << (div - 5u) : quarter / DIV_DEN[div % 6u];
 }
 
+/* the 2.9 ms ramps the effects glide and fade with (128 samples) */
+#define RAMP_LOG2 7
+#define RAMP_LEN (1 << RAMP_LOG2)
+#define RAMP_SLOPE (32768 / RAMP_LEN)
 #include "perform.c"                                 /* the FX hold layer's effects (the master) */
 #include "click.c"                                   /* the metronome's click (after the master: audio.c) */
 
@@ -613,7 +617,7 @@ static __attribute__((noinline)) void rev_side_mix(int32_t *l, int32_t *r, uint3
     }
 }
 
-/* INSERT (1.5, Discussions #78 and #177): one effect per track, after DIST and before the SLICER, with a dry / wet
+/* INSERT (1.5, Discussions #78 and #177): one effect per track, after DIST, with a dry / wet
  * MIX. TYPE (P_ITYPE, N_ITYPE; stored, append-only) and its three values A B C (P_IA .. P_IC, what they mean: params.c
  * ins_desc):
  *   SOFT HARD FOLD FUZZ  DRIVE (1x .. ~13x, squared), TONE (two one-pole low-passes at F_CUTOFF), LEVEL (F_DB, as the
@@ -629,7 +633,7 @@ static __attribute__((noinline)) void rev_side_mix(int32_t *l, int32_t *r, uint3
  *                        127), feedback 0 .. 0.4. A DC blocker on the swept copy (a clipped loud input is lopsided).
  * The swept ones are the pedals': their wet is (dry + swept) / 2, the notches need both, so MIX 100 % is the whole
  * effect and less a lighter one. MIX (P_IMIX) blends dry and wet linearly; MIX 0 or TYPE OFF: the track bit for bit
- * as before (nothing runs). MIX glides (2.9 ms, SL_SLOPE); a TYPE change fades the old one out, clears the state,
+ * as before (nothing runs). MIX glides (2.9 ms, RAMP_SLOPE); a TYPE change fades the old one out, clears the state,
  * fades the new one in; so does a start from MIX 0 (no stale line or filter). With SPREAD (mix_spread) the insert
  * takes the mono sum b, as DIST does; the side passes it by.
  * Order: DIST -> INSERT -> SLICER: the insert colours the sound as DIST does; the SLICER's gate (and its STUT
@@ -691,7 +695,7 @@ static __attribute__((noinline)) void ins_drive(ins_t *s, const track_t *t, int3
     int32_t k = ins_lpk(crush ? t->p[P_IC] : t->p[P_IB]), lvl = crush ? 4096 : LEVEL_Q12[t->p[P_IC] & 127];
     for (i = 0; i < n; i++) {
         int32_t x = b[i], y, v;
-        s->w += clamp(tw - s->w, -SL_SLOPE, SL_SLOPE);
+        s->w += clamp(tw - s->w, -RAMP_SLOPE, RAMP_SLOPE);
         if (crush) {
             if (!s->cnt) {
                 s->hold = ins_shape(IT_CRUSH, clamp(x, -262144, 262143), sh);
@@ -733,7 +737,7 @@ static __attribute__((noinline)) void ins_swept(ins_t *s, const track_t *t, int3
         for (i = 0; i < n; i++) {
             int32_t x = b[i], xs = clamp((x + 4) >> 3, -16383, 16383), u = xs + ((s->fb * fbk + 16384) >> 15), y = u;
             uint32_t st;
-            s->w += clamp(tw - s->w, -SL_SLOPE, SL_SLOPE);
+            s->w += clamp(tw - s->w, -RAMP_SLOPE, RAMP_SLOPE);
             for (st = 0; st < PH_ST; st++) {            /* y = a (u - y1) + u1 */
                 y = clamp(s->px[st] + ((a * (u - s->py[st]) + 8192) >> 14), -65535, 65535);
                 s->px[st] = u;
@@ -754,7 +758,7 @@ static __attribute__((noinline)) void ins_swept(ins_t *s, const track_t *t, int3
         for (i = 0; i < n; i++, s->ph += inc) {
             int32_t x = b[i], r0, r1, v, fr;
             uint32_t d;                                 /* the delay, Q16 samples */
-            s->w += clamp(tw - s->w, -SL_SLOPE, SL_SLOPE);
+            s->w += clamp(tw - s->w, -RAMP_SLOPE, RAMP_SLOPE);
             if (chorus) {
                 d = (uint32_t)((140 << 16) + ((osc_sine(s->ph) * (int32_t)dep * 50) >> 5));   /* 3.2 +- 2.3 ms */
             } else {
@@ -805,7 +809,7 @@ static __attribute__((noinline)) void track_insert(track_t *t, int32_t *b, uint3
 }
 
 /* one block of the whole mix (shared with hostsim.c): events -> each part (with its modulation matrix)
- * -> dist -> INSERT -> SLICER -> level / pan / sends -> buses -> master; out: stereo Q15 */
+ * -> dist -> INSERT -> level / pan / sends -> buses -> master; out: stereo Q15 */
 static void events_block(uint32_t n);                    /* seq.c */
 #if FELUCCA_CPU2
 static int32_t wet[CTL];                                 /* (the dry mix and the sends: mx[0], above) */
@@ -818,8 +822,7 @@ static int32_t send_c[CTL], send_d[CTL], send_r[CTL], wet[CTL], mix_l[CTL], mix_
  * law PAN has (the far side down, the near one as it is). track_render gives every voice (b, as always) and the left
  * ones (spread_buf); here d = left - right, the side signal, so for a pair of pans L = b (gla + glb) / 2 + d (gla - glb)
  * / 2 (R alike): the mono sum is b's, the level of a centre pan less by SPRD / 256 at most. b goes through DIST, the
- * SLICER and the FX layer's mute key as always; d gets the SLICER's gate and the mute's ramp (slicer_track_sd,
- * perf_mute_sd) and passes DIST by (the spread of a distorted chord is its voices' clean difference). The sends
+ * the FX layer's mute key as always; d gets the mute's ramp (perf_mute_sd) and passes DIST by (the spread of a distorted chord is its voices' clean difference). The sends
  * take b, mono, as before. SPRD 0, MONO or LEGATO: mix_part's own loop, bit for bit as before. The cost: a block's
  * clear and sum of spread_buf, the side and a wider mix loop, per part; per voice none (it picks its buffer) */
 static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_t n SM_DECL)
@@ -839,7 +842,6 @@ static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_
     track_dist(t, b, n);
     if (t->p[P_ITYPE] | t->ins_run)
         track_insert(t, b, n);                          /* (the mono sum, as DIST) */
-    slicer_track_sd(t, b, d, n);
     if ((pf.mute >> (t - trk)) & 1u)
         perf_mute_sd((uint32_t)(t - trk), b, d, n);
     for (i = 0; i < n; i++) {
@@ -865,22 +867,7 @@ static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_
  * when built, nothing when retired. An estimate: it only steers the split, the sound does not depend on it */
 #if FELUCCA_CPU2
 static uint16_t part_cost[NTRK];                        /* the last block's, per part */
-#if FELUCCA_WS_ONLY
 static const uint16_t ENG_VCOST[NENGINES] = {148};     /* STORM (STORM PAD: 1187 instructions / sample at 8 notes) */
-#else
-static const uint16_t ENG_VCOST[NENGINES] = {163, FELUCCA_FM4 ? 181 : 0, 162, 67, 70, 174, 144, 143, 189, 309, 113, 134,
-                                             181,
-#if FELUCCA_SLICE
-                                             129,
-#endif
-#if FELUCCA_ADPCM
-                                             168,      /* ADPCM (ORGAN, 1693 instructions / sample at 8 notes) */
-#endif
-#if FELUCCA_WAVESTORM
-                                             0, 148,   /* (14 held for ADPCM), STORM */
-#endif
-};
-#endif
 #endif
 
 /* one synth part into the dry mix and the sends of sm (mx[0]; mx[1] on the second core); a part with no voice sounding costs
@@ -903,8 +890,7 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
 #endif
         t->tail = t->p[P_ITYPE] ? 64 : 16;              /* blocks of DIST / INSERT state to run out after the last
                                                          * voice (the INSERT's: 46 ms, a flanger's feedback) */
-    else if ((!t->tail || !(t->p[P_DIST] | t->p[P_ITYPE]) || !--t->tail) && !slicer_busy(t)) {
-        slicer_track(t, 0, n);                          /* (the SLICER's step clock runs on) */
+    else if (!t->tail || !(t->p[P_DIST] | t->p[P_ITYPE]) || !--t->tail) {
         if (t->ins_run && !t->p[P_ITYPE])
             ins_rest(t);                                /* TYPE OFF while silent: no fade-out left for the next note */
         if (MOD(t).on)
@@ -917,7 +903,6 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
         track_dist(t, b, n);
         if (t->p[P_ITYPE] | t->ins_run)
             track_insert(t, b, n);                      /* the INSERT (1.5): off, nothing */
-        slicer_track(t, b, n);                          /* slicer.c: before the level, pan and sends */
         if ((pf.mute >> (t - trk)) & 1u)
             perf_mute((uint32_t)(t - trk), b, n);       /* perform.c: a black key in the FX layer */
     }

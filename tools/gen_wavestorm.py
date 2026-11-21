@@ -3,10 +3,8 @@
 # Copyright (C) 2026 André Leitzke Junior
 """WaveStorm's wave bank: band-limited single-cycle waves as int16_t mip tables (no float on the target).
 
-  gen_wavestorm.py OUT.h                write the 16-wave bank (firmware/src/eng_wavestorm_waves.h)
-  gen_wavestorm.py --xl OUT.h           write the 48-wave bank (firmware/src/eng_wavestorm_waves_xl.h): the 16, then 32
-                                        more, for the WaveStorm-only build (FELUCCA_WS_ONLY), which has the flash for it
-  gen_wavestorm.py [--xl] --check OUT.h exit 1 if OUT.h is not what this script writes
+  gen_wavestorm.py OUT.h           write the 48-wave bank (firmware/src/eng_wavestorm_waves.h)
+  gen_wavestorm.py --check OUT.h   exit 1 if OUT.h is not what this script writes
 
 Every wave is generated here from a formula (additive spectra, or a time-domain shape analysed with a DFT), so
 the bank carries no third-party material. Each wave has WS_LEVELS (8) mip levels: level k keeps the harmonics up to
@@ -111,8 +109,7 @@ WAVES = [
 ]
 
 
-# 32 more for the WaveStorm-only build (--xl): the 16 above stay the first, in that order (presets and the wave
-# sequences name them by number)
+# 32 more: the 16 above stay the first, in that order (the presets and the wave sequences name them by number)
 XL_WAVES = [
     ("SAW2", harm_sine({n: 1 / n ** 1.5 for n in range(1, NHARM + 1)})),
     ("SQR2", harm_sine({n: 1 / n ** 1.5 for n in range(1, NHARM + 1, 2)})),
@@ -220,10 +217,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("out")
     ap.add_argument("--check", action="store_true")
-    ap.add_argument("--xl", action="store_true", help="the 48-wave bank (FELUCCA_WS_ONLY)")
     a = ap.parse_args()
-    waves = WAVES + XL_WAVES if a.xl else WAVES
-    text = header(waves, "ENG_WAVESTORM_WAVES_XL_H" if a.xl else "ENG_WAVESTORM_WAVES_H")
+    waves = WAVES + XL_WAVES
+    text = header(waves, "ENG_WAVESTORM_WAVES_H")
     if a.check:
         ok = Path(a.out).exists() and Path(a.out).read_text() == text
         print(f"{'ok' if ok else 'FAIL'}: {a.out} {'matches' if ok else 'differs from'} tools/gen_wavestorm.py")

@@ -13,7 +13,7 @@ the current approximation that an acyclic backward path can count as a loop.
 The estimator is a static instruction heuristic, not a cycle or deadline proof.
 Calls do not add their callees' costs.
 
-`real_pi32v2.dis` is the donor's actual `dv_out` listing from firmware main
+`real_pi32v2.dis` is the donor's actual `perf_master` listing from firmware main
 `19a7081`, built with JieLi Clang 4.0.1, `-Os` and selective minsize. Its expected
 result is 40 instructions, 35 loop instructions, no loop divides/calls, cost 35.
 Excerpt whitespace is normalized; instruction bytes and decoded text are preserved.

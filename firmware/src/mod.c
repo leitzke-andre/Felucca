@@ -54,7 +54,7 @@ enum { MS_OFF, MS_LFO, MS_ENV, MS_VEL, MS_KEY, MS_RAND, MS_MODW, MS_AT, MS_EXPR,
 enum { MD_OFF, MD_PITCH, MD_CUT, MD_SHP, MD_AMP, MD_PAN, MD_DIST, MD_CHO, MD_DLY, MD_REV, MD_RATE, MD_VIB, MD_E1,
        MD_DEPTH = MD_E1 + 8, MD_VEL, MD_TIME, MD_N };   /* (append-only: the stored values keep their meaning) */
 _Static_assert(NELEM(N_MSRC) == MS_N && NELEM(N_MDST) == MD_N, "N_MSRC / N_MDST == MS_* / MD_*");
-_Static_assert(P_M2SRC == P_M1SRC + 3 && P_M4AMT == P_M1SRC + 11 && P_M4AMT + 1 == P_FM1_ATK, "matrix slots: 3 ids each");
+_Static_assert(P_M2SRC == P_M1SRC + 3 && P_M4AMT == P_M1SRC + 11 && P_M4AMT + 1 == P_CHRD, "matrix slots: 3 ids each");
 #define NMSLOT 4u
 #define NMSLOT_ALL (NMSLOT + 1u)  /* + 1.8's AFTERTOUCH (VOICE 3): a slot of its own, its source AT (P_ATDST, P_ATAMT) */
 #define MS_VOICE(s) ((s) >= MS_ENV && (s) <= MS_RAND)             /* a value per voice */
@@ -341,11 +341,11 @@ static uint32_t mod_note(track_t *t, uint32_t note, uint32_t vel)
 }
 
 /* 1.5.6 (#213): TIME on a step of velocity vel, its first note: how late it plays, in samples (0: on time). At most
- * 30 ms, and 7/16 of the step (period: the step's samples), as the longest NUDGE */
+ * 30 ms, and 7/16 of the step (period: the step's samples) */
 #define MOD_TIME_MAX ((uint32_t)FS * 30u / 1000u)
 static __attribute__((noinline)) uint32_t mod_time(track_t *t, uint32_t note, uint32_t vel, uint32_t period)
 {
-    uint32_t mx = period * 7u / NUDGE_DIV, d;
+    uint32_t mx = period * 7u / 16u, d;
     int32_t q;
     if (!mod_has(t, MD_TIME))
         return 0;

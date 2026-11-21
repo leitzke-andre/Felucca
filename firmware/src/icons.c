@@ -158,7 +158,6 @@ static const icon_map_t ICON_MAP[] = {
     /* fixed columns drawn by ui_draw.c (STEP page, preset browser) */
     {"NOTE", ICON_PITCH}, {"STEP", ICON_STEPS}, {"FLAG", ICON_ACCENT}, {"ACC", ICON_ACCENT}, {"LANE", ICON_DRUM}, {"HIT", ICON_GATE}, {"SLD", ICON_SLIDE},
     {"TRACK", ICON_MIX},                  /* TRACKS page (LEVEL, LEN, PAN: above) */
-    {"SLCR", ICON_SLICE}, {"PAT", ICON_STEPS}, {"DEPTH", ICON_MIX},   /* SLICER page (RATE: param_icon) */
 };
 
 static uint32_t icon_for_label(const char *l)
@@ -192,30 +191,10 @@ static uint32_t param_icon(const param_desc_t *d, int32_t v)
                 return WAVE_ICON[i].icon;
     if (d == &TP[P_LWAVE])
         return ICON_LFO_WAVE;                 /* "WAVE" is also the oscillator wave */
-    if (d == &TP[P_ARATE] || d == &TP[P_SLRATE])
-        return ICON_DIVISION;                 /* arp / SLICER RATE is a note division, not Hz */
-#if !FELUCCA_WS_ONLY
-    if (d->names == N_TRIO_MODE)
-        return ICON_CUTOFF;                   /* TRIO's MODE is the filter type, not the arp mode */
-#endif
-    if (d == &TP[P_FTYPE])
-        return ICON_CUTOFF;                   /* ANALOG's filter TYPE (1.5): "TYPE" is also the reverb's */
+    if (d == &TP[P_ARATE])
+        return ICON_DIVISION;                 /* arp RATE is a note division, not Hz */
     if (d == &TP[P_ESYNC])
         return ICON_TEMPO;                    /* ENV SYNC (1.5): as LFO 2's SYNC */
-#if !FELUCCA_WS_ONLY
-    if (d->names == N_NOISE_MODE)
-        return ICON_NOISE;                    /* NOISE's MODE is the source; its CLK the register clock */
-    if (d == &NOISE_CLK)
-        return ICON_RATE;
-#endif
-#if FELUCCA_SLICE
-    if (d->names == N_SLC_DIV)
-        return ICON_SLICE;                    /* SLICE: DIV is the slicing, MODE the gate, REV the direction */
-    if (d->names == N_SLC_MODE)
-        return ICON_GATE;
-    if (d->names == N_SLC_REV)
-        return ICON_ORDER;
-#endif
     return icon_for_label(d->label);
 }
 
@@ -247,9 +226,6 @@ static uint32_t engine_icon(const char *name)
 {
     static const icon_map_t M[] = {
         {"ANALOG", ICON_WAVE},
-#if FELUCCA_FM4
-        {"DIGITAL", ICON_ALGORITHM},
-#endif
         {"PHASE", ICON_PHASE}, {"LOFI", ICON_BITS},
         {"SAMPLE", ICON_SAMPLE}, {"VOICE", ICON_MOUTH}, {"TRIO", ICON_TRIO}, {"WHEEL", ICON_DRAWBAR},
         {"SLICE", ICON_SLICE},
@@ -274,9 +250,7 @@ static uint32_t motion_icon(void) { return rec_on(TSEL) ? ICON_X_MOTION_REC : IC
 static uint32_t page_icon(const page_t *pg)
 {
     switch (pg->graph) {
-    case GR_TRK: return ICON_X_MIXER;         /* MIXER (HOME): vertical faders */
     case GR_PATS: return ICON_X_PATTERN;      /* SAVE > PHRASES: the pattern loader */
-    case GR_SONG: return ICON_X_SONG;         /* SONG: the disc */
     case GR_EVENTS: return motion_icon();     /* AUTOMATION */
     default: return ICON_NONE;
     }

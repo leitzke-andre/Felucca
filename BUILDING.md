@@ -63,7 +63,7 @@ On Linux x86-64 the toolchain runs natively and Docker is not needed.
 `./build.sh --release 1.8.1` makes a release build: the package identity becomes `FM-1_918`
 and the version string `v1.8.1`; the package is `build/felucca-1.8.1.fwsc`, and
 `build/release-1.8.1/` holds what a release ships: the package, the app
-(`felucca-1.8.1-app.bin`), `SHA256SUMS`, the sample attribution, `LICENSE`, `LICENSING.md` and
+(`felucca-1.8.1-app.bin`), `SHA256SUMS`, `LICENSE`, `LICENSING.md` and
 `LICENSES/` (the package contains Apache-2.0 SDK files, so the licence texts travel with it).
 
 Build options (environment, `0` or `1`; defaults in `firmware/src/felucca.c`, `core.h` and `icons.c`):
@@ -79,61 +79,37 @@ Build options (environment, `0` or `1`; defaults in `firmware/src/felucca.c`, `c
 | `FELUCCA_UAC_AS_FIRST` | 1 | the audio control header lists the audio streaming interface before the MIDI one, so the USB audio driver of older macOS (up to 15) finds it; `0`: 1.0 to 1.5's order, byte for byte (`firmware/bsp/chip/usb.c`) |
 | `FELUCCA_CPU2` | 1 | the second core is built in (MENU > SYSTEM > 2ND CORE, OFF by default); `0`: none of it, 1.6's one-core code and RAM (`firmware/bsp/chip/fm1_cpu1.h`, `firmware/src/fx.c`) |
 | `FELUCCA_UART` | 1 | TRS MIDI IN |
-| `FELUCCA_SLICE` | 1 | the SLICE engine |
 | `FELUCCA_ICONS` | 1 | parameter icons on the knob cards |
-| `FELUCCA_FM4` | 0 | the retired DIGITAL engine (4-operator FM) instead of its FM6 conversion |
-| `FELUCCA_ADPCM` | 0 | the ADPCM engine (engine 14, `firmware/src/eng_adpcm.c`): kept in the tree, not built by default. On the FM-1 one of its voices costs about three ANALOG voices (8 voices on one part: 54 % CPU, against 17 % for ANALOG; on all four parts the audio drops out); the figures are in `eng_adpcm.c` |
 
 `FELUCCA_USB_LAYOUT` (`0` to `3`, default `0`) picks other USB descriptor layouts for testing; see
 `firmware/bsp/chip/usb.c`.
-
-## Samples
-
-The CC0 instrument samples that the SAMPLE engine uses are in `assets/samples-cc0/`
-(Versilian Studios, see `ATTRIBUTION.txt` there). `tools/fetch_cc0.py` downloads them
-again from the source repositories. Without that folder the build still works, with no
-instrument sets in the SAMPLE engine and no PIANO in SLICE (the PIANO set's middle C): they play a plain sine
-at the note's pitch instead, and the screen says NO SAMPLE.
 
 ## Browser demo
 
 ```
 ./build.sh
 web/emu/build.sh
-python3 -m http.server -d build/emu 8790     # open http://localhost:8790/
+python3 -m http.server --bind 127.0.0.1 -d build/emu 8790     # open http://localhost:8790/
 ```
 
 `web/emu/felucca_web.c` builds the firmware's sources as the host tests do, against a simulated FM-1, and
 Emscripten compiles it to WebAssembly (`build/emu/felucca.wasm`, with `index.html`, `worklet.js` and the font in `fonts/`).
-It is a demo: the page keeps the flash's storage sectors (projects, user presets, settings) in the browser; USB (audio,
-MIDI out, the editor, updates), TRS MIDI and the user sample slots are not emulated. A build of it is on the site:
-<https://hugelton.github.io/Felucca/webapp/try/>.
+It is a demo: the page keeps the flash's storage sectors (user presets, settings, the autosave) in the browser; USB
+(audio, MIDI out, the editor, updates) and TRS MIDI are not emulated. Open it at `localhost` or `127.0.0.1` (the audio
+needs a secure context).
 
 ## Tests
 
 ```
-tests/run_tests.sh
+sh tests/ws_tests.sh
 ```
 
-Runs the firmware's host-side unit and regression tests and, with Node.js, the installer/editor tests (and, with Emscripten too, the browser demo's). Run it after `./build.sh`
-(it uses `build/` and needs `AC79_SDK` set as for the build). The suites cover flash storage,
-user presets, projects of every format, backup, the keys and knobs, MIDI (USB, TRS, clock,
-control), USB audio, the update entry and loader, the command-line installer, the UI (the real
-drawing code against stubs: every screen in every palette is rendered and checked for clipped or
-overlapping text; PNGs land in `build/ui_new/`), every engine (DRUM, NOISE, PHYS, FM6, SLICE, the
-DIGITAL conversion), the chord keys, the modulation matrix, the FX layer, the reverbs, the SLICER
-and swing. With `DAISYSP` pointing at a DaisySP checkout, the PHYS models are also compared with
-their floating-point originals; without it that test is skipped. Likewise with `SNES_SPC` pointing at a
-snes_spc 0.9.0 checkout, the ADPCM engine's voice is compared sample for sample with its `SPC_DSP.cpp`
-(`tests/adpcm_ref.cpp`, needs `c++`); without it the rest of the ADPCM test runs. Felucca-Engines' own test
-(`firmware/engines/tests/run.sh`) runs too, and its standalone host is built once more with Felucca's tables
-against the same golden renders.
-
-The regression suite (`tests/regress.c`) renders every engine and preset and compares a
-hash of each render with `tests/golden.txt`; it also checks levels, voices and the CPU
-cost (`tests/cpu_baseline.txt`, `tests/target_budget.txt`). After an intended change of
-the sound, `GOLDEN_UPDATE=1 sh tests/run_tests.sh` rewrites the hashes; `BUDGET_UPDATE=1`
-does the same for the cost files.
+Runs every host test after `./build.sh` (it uses `build/gen` and `build/felucca.dis`): the STORM engine and the whole
+firmware under ASan/UBSan, Felucca's tests of the platform WaveStorm keeps unchanged (keys, TRS and USB MIDI, USB
+audio and descriptors, flash storage, the update entry, loader, package and installer, the text renderer), and the
+target cost of the render loops in the pi32v2 disassembly against `tests/target_budget.txt` (after an intended change,
+`BUDGET_UPDATE=1` rewrites it). The loader test needs `AC79_SDK` as for the build, the font spacing test a Python with
+Pillow (`PYTHON=`); without them they are skipped. See [WAVESTORM.md](WAVESTORM.md).
 
 ## Install
 

@@ -74,10 +74,8 @@ static __attribute__((noinline)) void midi_clock_pulse(uint32_t ms)
                         trk[i].seq_pos = midi_clock_scale_phase(trk[i].seq_pos, new_period, old_period, &midi_seq_grid[i]);
                     if (trk[i].seq_off)
                         trk[i].seq_off = midi_clock_scale(trk[i].seq_off, new_period, old_period);
-                    if (trk[i].nd_late)            /* (NUDGE: the latched plays, seq_pos + 1, with the step) */
+                    if (trk[i].nd_late)            /* (the matrix's TIME: the latched play, seq_pos + 1, with the step) */
                         trk[i].nd_late = midi_clock_scale(trk[i].nd_late - 1u, new_period, old_period) + 1u;
-                    if (trk[i].nd_early)
-                        trk[i].nd_early = midi_clock_scale(trk[i].nd_early - 1u, new_period, old_period) + 1u;
                     div = (uint32_t)trk[i].p[P_ARATE];
                     old_period = midi_clock_period(old_beat, div); new_period = midi_clock_period(new_beat, div);
                     if (trk[i].arp_pos < 0xFFFFFFFu)

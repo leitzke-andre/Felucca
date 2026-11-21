@@ -9,7 +9,7 @@
  * LAST (1.2), then CALIBRATION (the setup screen: HARDWARE CALIBRATION), INFO (1.2) and ABOUT, the rows with no value
  * (MI_VALUES: the rows before them hold one, but LEARN CLEAR: menu_valued). 1.0.5: in four tabs (MI_TAB); 1.2: five.
  * 1.8 (#266): CLEAR ALL (SYSTEM), a row with no value: OCT+ asks (the dialog), then the music as a new project
- * (project.c project_new); the stored projects, user presets, samples, settings and MIDI LEARN stay
+ * (ws_store.c clear_all); the user presets, settings and MIDI LEARN stay
  * 1.5: LEARN CLEAR (MIDI) is an action, not a setting: OCT+ clears MIDI LEARN's map (midi_learn.c ml_clear_all; the editor
  * has LEARN_SET op 2 for it, so MENU_DESC does not offer it); the row shows how many CCs are learned
  * 1.2: TUNE and MIDI IN are not settings: they edit the project's G_TUNE and G_ROUTE (up to 1.1.5 on GLO > GLOBAL and

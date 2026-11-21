@@ -4,11 +4,10 @@
  * define, so the order matters. */
 
 /* ---------------------------------------------------- build options --- */
-/* build.py: FELUCCA_<NAME>=0 / 1 in the environment overrides these. Elsewhere: FELUCCA_SLICE, FELUCCA_FM4
- * (core.h: the SLICE engine, the DIGITAL engine), FELUCCA_ICONS (icons.c, the parameter icons; on by default),
- * FELUCCA_OTA_RAMONLY (ota.c). */
+/* build.py: FELUCCA_<NAME>=0 / 1 in the environment overrides these. Elsewhere: FELUCCA_CPU2 (core.h, the second
+ * core), FELUCCA_ICONS (icons.c, the parameter icons; on by default), FELUCCA_OTA_RAMONLY (ota.c). */
 #ifndef FELUCCA_FLASH
-#define FELUCCA_FLASH 1          /* flash driver + storage.c: settings, projects, user presets */
+#define FELUCCA_FLASH 1          /* flash driver + storage.c: settings, user presets, the autosave */
 #endif
 #ifndef FELUCCA_OTA
 #define FELUCCA_OTA 1            /* M-UPGRADE update entry and the editor SysEx; needs FELUCCA_FLASH */
@@ -87,7 +86,6 @@ static __attribute__((noinline)) int c1_wait(void) { return fm1_cpu1_wait(); }  
 #include "params.c"
 #include "mod.c"               /* the modulation matrix, used by voice.c and fx.c */
 #include "voice.c"
-#include "slicer.c"              /* per-track SLICER insert, used by fx.c */
 #include "fx.c"
 
 /* ------------------------------------------------- MIDI, sequencer --- */
@@ -95,7 +93,6 @@ static __attribute__((noinline)) int c1_wait(void) { return fm1_cpu1_wait(); }  
 #if FELUCCA_UART
 #include "midi_uart.c"
 #endif
-#include "song_chain.c"
 #include "seq.c"
 #include "audio.c"
 
@@ -117,7 +114,7 @@ static __attribute__((noinline)) int c1_wait(void) { return fm1_cpu1_wait(); }  
 #include "storage.c"
 #endif
 #include "upreset.c"             /* user presets (RAM mirror; flash with FELUCCA_FLASH) */
-#include "project.c"
+#include "ws_store.c"            /* the settings and the autosave (no projects) */
 #if FELUCCA_OTA
 #include "../bsp/chip/ota.c"
 #include "ota_hw.c"

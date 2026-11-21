@@ -6,9 +6,8 @@
  *   gA = (1-x)(1-y)   gB = x(1-y)   gC = (1-x)y   gD = xy
  * so X fades A->B (and C->D) and Y fades the top pair into the bottom pair.
  *
- * A corner (WAV A..D) is a single-cycle wave from the band-limited bank (tools/gen_wavestorm.py: 16 waves beside Felucca's
- * engines, eng_wavestorm_waves.h; 48 in the WaveStorm-only build, eng_wavestorm_waves_xl.h, the first 16 the same) or one
- * of eight wave sequences (S-CYC .. S-HIT, after the waves): steps of wave, duration, level, pitch offset and crossfade,
+ * A corner (WAV A..D) is a single-cycle wave from the band-limited bank (tools/gen_wavestorm.py: 48 waves,
+ * eng_wavestorm_waves.h) or one of eight wave sequences (S-CYC .. S-HIT, after the waves): steps of wave, duration, level, pitch offset and crossfade,
  * one-shot, looping or ping-pong, restarted with each note.
  *
  * The position: X and Y (the knobs) are the centre; PATH adds a vector envelope, a breakpoint path restarted with
@@ -25,11 +24,7 @@
  * State: s[0] s[1] the smoothed X and Y (Q15), s[2] the path's segment (from | to << 8), s[3] the time in it (ms
  * Q10), s[4] 1 once X and Y are set (0: the first block jumps to the target); per corner the phases and the
  * sequence's step in the part's engine memory (ws_part_t; the host's ENG_MEM, or an array of the engine's own). */
-#if defined(FELUCCA_WS_ONLY) && FELUCCA_WS_ONLY
-#include "eng_wavestorm_waves_xl.h"   /* WaveStorm alone: 48 waves (the flash the other engines left) */
-#else
-#include "eng_wavestorm_waves.h"      /* beside Felucca's engines: 16 */
-#endif
+#include "eng_wavestorm_waves.h"      /* 48 waves (tools/gen_wavestorm.py) */
 
 #define WS_NSEQ 8
 #define WS_NSRC (WS_NWAVES + WS_NSEQ)

@@ -37,7 +37,7 @@ static int motion_param(uint32_t id)
      * changes never become automation. FX sends and continuous mix are safe. */
     return id < P_COUNT && (id <= P_REL || (id >= P_ED_FLT && id <= P_LD_AMP) ||
         (id >= P_DIST && id <= P_REV) || id == P_GLIDE || id == P_PAN ||
-        id == P_DETUNE || (id >= P_FM1_ATK && id <= P_FM4_LEVEL) || (id >= P_LN0 && id <= P_LN7) ||
+        id == P_DETUNE ||
         id == P_SPRD || (id >= P_ITYPE && id <= P_IMIX) || id >= P_E0);   /* (not the chord keys, nor 1.2's LFO SYNC TRIG
                                         * POL and QUANTIZE, nor 1.5's filter TYPE and ENV SYNC: settings; the DRUM lane
                                         * levels, SPREAD (#148: continuous, as PAN), 1.5's INSERT (TYPE too: a lock
@@ -367,10 +367,10 @@ static int motion_move(track_t *t, uint32_t i, uint32_t step, uint32_t id, int16
     motion_unguard(f);
     return 0;
 }
-/* an id whose meaning is the engine's own: EDIT's E1..E8, DIGITAL's operators, DRUM's lane levels */
+/* an id whose meaning is the engine's own: EDIT's E1..E8 */
 static int motion_engine_id(uint32_t id)
 {
-    return (id >= P_E0 && id <= P_E7) || (id >= P_FM1_ATK && id <= P_FM4_LEVEL) || (id >= P_LN0 && id <= P_LN7);
+    return id >= P_E0 && id <= P_E7;
 }
 /* a sound load put engine `to` where `from` was: when they differ, track t's records on the engine's own ids go (their
  * meaning changed); the ones on the common parameters (LEVEL, ENV, LFO, FILTER ENV, the sends, GLIDE, PAN, DETUNE)

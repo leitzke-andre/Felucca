@@ -88,10 +88,6 @@ static int up_to_v4(up_rec_t *r)                 /* 1 = r is version 4 / 5 (now)
     uint32_t i;
     if (r->ver >= 4u)
         return 1;
-#if !FELUCCA_WS_ONLY
-    if (r->ver == 1u && r->engine == ENGI_PHYS)
-        return 0;
-#endif
     for (i = 0; i < r->np; i++)
         if ((v[i] = r->p[i]) < -64 || v[i] > 127)
             return 0;
@@ -127,18 +123,10 @@ static void up_set_value(up_rec_t *r, uint32_t k, int16_t v)
 static void up_migrate(up_rec_t *r)
 {
     int16_t e[8]; uint32_t k;
-#if FELUCCA_WS_ONLY
     (void)e; (void)k; (void)r;                  /* (STORM's records need no migration) */
     return;
-#endif
     if (!up_valid(r)) return;
     for (k = 0; k < 8u; k++) e[k] = up_value(r, r->np - 8u + k);
-#if !FELUCCA_WS_ONLY
-    if (drum_from_phys(r->engine, e) || drum_from_perc(r->engine, e)) {   /* (SAMPLE PERC: see the top) */
-        r->engine = ENGI_DRUM;
-        for (k = 0; k < 8u; k++) up_set_value(r, r->np - 8u + k, e[k]);
-    }
-#endif
 }
 
 static void up_pat_norm(uint8_t *note, uint8_t *flags);
@@ -199,7 +187,7 @@ static void up_pat_norm(uint8_t *note, uint8_t *flags)   /* tie: no note; rest: 
         *note = 0;
         *flags = 4;
     } else {
-        *flags = *note ? (uint8_t)(*flags & (SF_ACCENT | SF_SLIDE | SF_RATCH)) : 0u;
+        *flags = *note ? (uint8_t)(*flags & (SF_ACCENT | SF_SLIDE)) : 0u;
     }
 }
 
@@ -208,7 +196,7 @@ static void up_pat_from(up_rec_t *r, const step_t *st)   /* the first 16 steps -
     uint32_t i;
     for (i = 0; i < 16u; i++) {
         r->note[i] = st[i].time == ST_NOTE && st[i].n ? st[i].note[0] : 0u;
-        r->flags[i] = st[i].time == ST_TIE ? 4u : (uint8_t)(st[i].flags & ~SF_NUDGE);   /* (no nudge: 4 is the tie here) */
+        r->flags[i] = st[i].time == ST_TIE ? 4u : st[i].flags;   /* (flag 4 is the tie here) */
         up_pat_norm(&r->note[i], &r->flags[i]);
     }
 }
@@ -286,22 +274,10 @@ static void up_values(const up_rec_t *r, int16_t *v)   /* mapped and clamped for
     for (i = 0; i < P_COUNT; i++)
         def[i] = param_desc_of(r->engine, i)->def;
     up_params(r, v, def);
-#if !FELUCCA_WS_ONLY
-    if (r->ver == 1u && ENGINES[r->engine] == &ENG_PHYS)   /* (before 1.0: MODEL 2 was DUST) */
-        phys_legacy(&v[P_E0]);
-#endif
     for (i = 0; i < P_COUNT; i++)
         v[i] = (int16_t)param_fit(param_desc_of(r->engine, i), v[i]);   /* (a retired KIT: the kit it plays) */
 }
 
-#if !FELUCCA_WS_ONLY
-#include "up_fm6.c"                            /* the FM6 user presets' patches: the same kind of store */
-#include "fm6_vbank.c"                         /* FM6's voice bank (SLOT B1..B32, 1.4.1) */
-#else
-static void upf_boot(void) {}                  /* (no FM6 patches beside the records) */
-static void fvb_boot(void) {}
-static void upf_track_load(track_t *t, uint32_t k) { (void)t; (void)k; }
-#endif
 
 static void up_boot(void)                      /* persist_boot: the banks from flash */
 {
@@ -310,8 +286,6 @@ static void up_boot(void)                      /* persist_boot: the banks from f
     for (b = 0; b < UP_SLOTS / UP_PER_BANK; b++)
         up_bank_check(b, flash_ok ? st_load(OBJ_UPRESET0 + b, &up_bank[b], sizeof up_bank[b]) : -1);
 #endif
-    upf_boot();                                  /* (after the banks: it may move the retired FM6 bank's patches) */
-    fvb_boot();                                  /* FM6's voice bank: a staged one finished, its voices */
 #ifdef FELUCCA_FAVORITES
     for (uint32_t k = 0; k < UP_SLOTS; k++)
         if (!up_used(k)) favorite_set(NENGINES, k, 0);
@@ -387,11 +361,7 @@ static void up_auto_name(char *b, uint32_t e, uint32_t k)
 {
     char l[4];
     e %= NENGINES;
-#if FELUCCA_WS_ONLY
     str_cpy(b, ENGINES[0]->name, 9);
-#else
-    str_cpy(b, ENGINES[eng_ok(e) ? e : ENGI_FM6]->name, 9);   /* (a DIGITAL record plays as FM6) */
-#endif
     up_slot_label(l, k);
     str_cpy(b + str_len(b), " ", 2);
     str_cpy(b + str_len(b), l + 1, 3);
@@ -430,27 +400,8 @@ static int up_store_cat(uint32_t k, const char *name, uint32_t cat)
         up_set_value(&r, i, motion_base_value(TSEL, i));
     up_pat_from(&r, TSEL->step);
     up_set_cat(&r, cat ? cat : track_cat(TSEL));
-    if (drum_track(TSEL)) {                             /* a DRUM track that strikes a lane: its grid */
-        uint32_t any = 0;
-        for (i = 0; i < 16u; i++)
-            any |= step_lanes(&TSEL->step[i]);
-        if (any) {
-            r.ver = UP_VER_GRID;
-            for (i = 0; i < 16u; i++) {
-                r.note[i] = (uint8_t)step_lanes(&TSEL->step[i]);
-                r.flags[i] = (uint8_t)step_accents(&TSEL->step[i]);
-            }
-        }
-    }
     {
         int rc = up_put(k, &r);                         /* the record first, then its FM6 patch (up_fm6.c) */
-#if !FELUCCA_WS_ONLY
-        if ((rc == 0 || rc == 3) && r.engine == ENGI_FM6) {
-            int u = upf_store(k, (uint32_t)(TSEL - trk));
-            if (u == 2)
-                rc = 2;
-        }
-#endif
         return rc;
     }
 }
@@ -469,9 +420,7 @@ static int up_rename_cat(uint32_t k, const char *name, uint32_t cat)
     up_set_cat(&r, cat);
     return up_put(k, &r);
 }
-static int up_rename(uint32_t k, const char *name) { return up_rename_cat(k, name, 0); }
 
-#if FELUCCA_WS_ONLY
 static void up_pat_load(track_t *t, uint32_t k);
 static uint32_t up_pat_rank(uint32_t slot);
 /* WaveStorm: a user preset is the whole part but its mix: slot k -> the sound, the ARP, SCL, CHORD, SLICER and pattern
@@ -509,47 +458,6 @@ static int up_load(uint32_t k)
     ui.force = 1;
     return 0;
 }
-#else
-/* slot k -> the selected part's sound: engine and every parameter except the track's own (param_kept:
- * the mix, ARP, SCL, the pattern parameters, the SLICER). The steps stay: the record's pattern is
- * loaded only from SAVE > PHRASES (up_pat_load). 0 ok, 1 empty */
-static int up_load(uint32_t k)
-{
-    const up_rec_t *r;
-    int16_t v[P_COUNT];
-    uint32_t i;
-    track_t *t = TSEL;
-    if (!up_used(k))
-        return 1;
-    r = up_rec(k);
-    up_values(r, v);
-    load_begin(t, UNDO_SOUND);                          /* (ui.c: the copy for SAVE held = undo) */
-    panic_req |= (uint8_t)(1u << song.sel);
-#if !FELUCCA_FM4 && !FELUCCA_WS_ONLY
-    if (r->engine == ENGI_DIGITAL) {                    /* a DIGITAL sound (kept as it was stored): FM6 */
-        int16_t p[P_COUNT];
-        for (i = 0; i < P_COUNT; i++)
-            p[i] = param_kept(i) ? t->p[i] : v[i];
-        fm4_apply(t, p);
-    } else
-#endif
-    {
-        fm1_irq_off();                                  /* the audio ISR must not see half a sound */
-        t->eng_req = r->engine;
-        for (i = 0; i < P_COUNT; i++)
-            if (!param_kept(i))
-                t->p[i] = v[i];
-        t->preset = 0;
-        fm1_irq_on();
-        upf_track_load(t, k);                           /* FM6: the preset's own patch (up_fm6.c) */
-    }
-    t->user = (uint8_t)(k + 1u);
-    load_end(t);
-    sync_reload = 1;
-    ui.force = 1;
-    return 0;
-}
-#endif
 
 /* the patterns of the user presets (SAVE > PHRASES lists them after the factory ones, ui.c pat_count) */
 static int up_has_pat(uint32_t k) { return up_used(k) && !up_pat_empty(up_rec(k)); }
@@ -590,21 +498,14 @@ static void up_pat_load(track_t *t, uint32_t k)
         return;
     r = up_rec(k);
     up_values(r, v);
-    if (up_grid(r))
-        load_grid16(t, r->note, r->flags);
-    else
-        load_pat16(t, r->note, r->flags);
+    load_pat16(t, r->note, r->flags);
     for (i = P_SDIV; i <= P_SGATE; i++)
         t->p[i] = v[i];
     t->p[P_SLEN] = (int16_t)clamp(v[P_SLEN], 1, 16);   /* (the pattern has 16 steps) */
 }
 
-/* the engine a used slot's sound plays on (a DIGITAL record: FM6, without FELUCCA_FM4) */
-#if FELUCCA_WS_ONLY
+/* the engine a used slot's sound plays on (STORM: the only one) */
 static uint32_t up_engine(uint32_t k) { (void)k; return 0; }
-#else
-static uint32_t up_engine(uint32_t k) { return eng_ok(up_rec(k)->engine) ? up_rec(k)->engine : ENGI_FM6; }
-#endif
 
 static uint32_t up_count(void)                 /* used slots */
 {
@@ -642,7 +543,7 @@ static void up_ui_named(uint32_t op, uint32_t k, const char *name, uint32_t cat)
         ui_message("EMPTY SLOT");
         return;
     }
-    if (op && (song.playing || chain_busy() || transport_req == 1u)) {    /* (up_put refuses too) */
+    if (op && (song.playing || transport_req == 1u)) {    /* (up_put refuses too) */
         ui_message("STOP TO SAVE");
         return;
     }

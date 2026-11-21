@@ -204,7 +204,7 @@ static void fl_plain_window_init(void) {}
 #define FL_FAR(fn) (fn)
 #include "../../firmware/src/storage.c"
 #include "../../firmware/src/upreset.c"
-#include "../../firmware/src/project.c"
+#include "../../firmware/src/ws_store.c"
 
 /* ------------------------------------------------- main.c and its HAL --- */
 #if FELUCCA_CPU2
@@ -458,7 +458,6 @@ EXPORT uint8_t *web_anim_levels(void)
  * renders set them): T1 FM6 PAD, T2 PHYS DRONE STRING (SYMP), T3 GRAIN CLOUD PAD, 4-note chords on all 16
  * steps, held; T4 DRUM, kick snare and hats. PLAY is the page's (or the test's) to press */
 EXPORT void web_test_heavy(void)
-#if FELUCCA_WS_ONLY
 {   /* WaveStorm: one part, STORM PAD (four crossfading sequences on every corner), 4-note chords held a bar each (a
      * chord on every fourth step, tied over the three after: the pad's slow attack reaches its level) */
     static const uint8_t CH[4][4] = {{48, 55, 60, 64}, {45, 52, 57, 60}, {41, 48, 53, 57}, {43, 50, 55, 59}};
@@ -479,37 +478,6 @@ EXPORT void web_test_heavy(void)
     }
     t->p[P_SLEN] = 16;
 }
-#else
-{
-    static const uint8_t ENG[3][2] = {{12, 4}, {ENGI_PHYS, 7}, {8, 0}};
-    static const uint8_t CH[4][4] = {{48, 55, 60, 64}, {45, 52, 57, 60}, {41, 48, 53, 57}, {43, 50, 55, 59}};
-    uint32_t p, i;
-    for (p = 0; p < 3u; p++) {
-        track_t *t = &trk[p];
-        host_preset(t, ENG[p][0], ENG[p][1]);
-        t->p[P_VOICE] = V_POLY;
-        t->p[P_SUS] = 127;
-        for (i = 0; i < 16u; i++) {
-            uint8_t n[4], k;
-            for (k = 0; k < 4u; k++)
-                n[k] = (uint8_t)(CH[i / 4u][k] + 12u * p);
-            put_step(t, i, 4, n, ST_NOTE, 0);
-        }
-    }
-    host_drums(&trk[3]);
-    for (i = 0; i < 16u; i++) {
-        uint8_t n[4];
-        uint32_t k = 0;
-        if (i % 4u == 0u)
-            n[k++] = 36;
-        if (i == 4u || i == 12u)
-            n[k++] = 38;
-        n[k++] = i % 2u ? 42 : 46;
-        put_step(&trk[3], i, k, n, ST_NOTE, 0);
-    }
-    ui.force = 1;
-}
-#endif
 
 EXPORT uint32_t web_test_user_preset(uint32_t i) { return (uint32_t)up_used(i); }
 
