@@ -2,33 +2,32 @@
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* User presets (editor protocol v2, cmds 16-21; the SAVE > USER page): 32 slots in two storage.c objects
  * (OBJ_UPRESET0/1, A/B sectors at 0xDC000..0xDFFFF), 16 records each, mirrored in RAM so browsing never reads flash.
- * A record (Felucca's format): engine, name, the instrument parameters, a 16-step pattern (factory PATTERNS[] format).
- * WaveStorm keeps each slot's own path and sequences beside it (ws_sound.c), as Felucca kept FM6 patches.
+ * A record (Felucca's layout): engine, name, the instrument parameters, a 16-step pattern (factory PATTERNS[] format).
+ * WaveStorm keeps each slot's own path, sequences and all 64 steps beside it (ws_sound.c).
  *
- * Versions: a bank whose magic, record size or slot count differ reads as empty; so does a record with another layout
- * version. A record keeps np = the P_COUNT it was stored with; when that differs from today's it is mapped by count:
- * its last 8 values are P_E0..P_E7, the first np - 8 are P_LEVEL.. in order, and parameters it does not have take
- * their defaults. That holds as long as common parameters are only ever added just before P_E0 (WaveStorm's filter
- * did so; else bump UP_VER and translate). Versions 1..3 stored a 16-bit value in every pair, 4 and 5 a byte
- * (+ 64); version 3 / 5 (UP_VER_GRID) is a record whose pattern is one of Felucca's drum grids (note[i] step i's lane
- * hits, flags[i] their accents), which the editor protocol can still send: it is read, its pattern taken as notes.
- * A record of engine 1 and up (Felucca's other engines) reads as empty (up_valid: r->engine < NENGINES); one of
- * engine 0, which was Felucca's ANALOG, is taken as a STORM sound (its values mapped by count: it sounds unlike it).
+ * Versions: a bank whose magic, record size or slot count differ reads as empty. WaveStorm writes version 6
+ * (UP_VER_WS), or 7 (UP_VER_WS_GRID) for a record whose pattern is a drum grid, which the editor protocol can still
+ * send (note[i] step i's lane hits, flags[i] their accents; its pattern is taken as notes); every value a byte (+ 64).
+ * Any other version reads as empty: Felucca's records (1..5), in these sectors on a unit that ran it, are never
+ * played on STORM with their meanings changed, and Felucca reads WaveStorm's as empty. A record keeps np = the P_COUNT
+ * it was stored with; when that differs from today's it is mapped by count: its last 8 values are P_E0..P_E7, the
+ * first np - 8 are P_LEVEL.. in order, and parameters it does not have take their defaults. That holds as long as
+ * common parameters are only ever added just before P_E0 (else a new version, translated).
  *
  * With -DUP_HOST (host test) only the part above #ifndef UP_HOST is built;
  * it needs nothing but core.h. */
 #define UP_PER_BANK 16u
 #define UP_PMAX 72u                              /* room for P_COUNT to grow */
 #define UP_USED 0xA5u
-#define UP_VER 4u                                /* (1..3 are read too: 16-bit values) */
-#define UP_VER_GRID 5u                           /* 4 with a drum grid as the pattern (see the top) */
+#define UP_VER_WS 6u                             /* WaveStorm's record (see the top) */
+#define UP_VER_WS_GRID 7u                        /* .. with a drum grid as the pattern */
 #define UP_BANK_MAGIC 0x31425055u                /* "UPB1" */
 typedef struct {
-    uint8_t used, ver, engine, np;               /* UP_USED, UP_VER, engine, P_COUNT when stored */
+    uint8_t used, ver, engine, np;               /* UP_USED, UP_VER_WS*, engine, P_COUNT when stored */
     char name[12];                               /* ASCII 32..126, 0-padded (no 0 when 12 long) */
-    union { int16_t p[UP_PMAX]; uint8_t packed[UP_PMAX * 2u]; };
-    uint8_t note[16], flags[16];                 /* note 0 = rest; flags 1 accent, 2 slide, 4 tie, SF_RATCH
-                                                  * (UP_VER_GRID: lane hits, their accents) */
+    uint8_t packed[UP_PMAX * 2u];                /* the values, a byte each (+ 64); Felucca's 1..3 had 16-bit ones */
+    uint8_t note[16], flags[16];                 /* note 0 = rest; flags 1 accent, 2 slide, 4 tie
+                                                  * (UP_VER_WS_GRID: lane hits, their accents) */
 } up_rec_t;
 typedef struct {
     uint32_t magic;
@@ -41,56 +40,35 @@ static up_bank_t up_bank[UP_SLOTS / UP_PER_BANK] __attribute__((section(".pool")
 
 static up_rec_t *up_rec(uint32_t k) { return &up_bank[k / UP_PER_BANK].r[k % UP_PER_BANK]; }
 
-/* 1.2 (Discussion #90): the sound's category (category.c CAT_*) in the record's last byte, packed[UP_CAT_AT]: a
- * version 4 / 5 record's values take np = P_COUNT (< 128) of its 144 bytes and nothing reads the others (up_valid
- * neither), so every record of before holds 0 there (CAT_NONE: listed by its engine, cat_of_engine) and firmware
- * before keeps the byte (a bank is written whole) without reading it: no format change, no version bump. A record of
- * versions 1..3 (a 16-bit value in every pair) has none; giving it one (a rename) rewrites it as version 4 / 5 when its
- * values fit a byte (up_to_v4) */
+/* 1.2 (Discussion #90): the sound's category (category.c CAT_*) in the record's last byte, packed[UP_CAT_AT]: the
+ * values take np = P_COUNT (< 128) of its 144 bytes and nothing else reads the others; 0 = CAT_NONE (listed by its
+ * engine, cat_of_engine) */
 #define UP_CAT_AT (UP_PMAX * 2u - 1u)
 #include "category.c"
 static uint32_t up_cat_of(const up_rec_t *r)
 {
-    uint32_t c = r->ver >= 4u && r->np <= UP_CAT_AT ? r->packed[UP_CAT_AT] : 0u;
+    uint32_t c = r->np <= UP_CAT_AT ? r->packed[UP_CAT_AT] : 0u;
     return c && c < CAT_N ? c : cat_of_engine(r->engine);
 }
-static int up_to_v4(up_rec_t *r)                 /* 1 = r is version 4 / 5 (now) */
+static void up_set_cat(up_rec_t *r, uint32_t c)  /* c CAT_BASS..CAT_OTHER (0: none given, kept) */
 {
-    int16_t v[UP_PMAX];
-    uint32_t i;
-    if (r->ver >= 4u)
-        return 1;
-    for (i = 0; i < r->np; i++)
-        if ((v[i] = r->p[i]) < -64 || v[i] > 127)
-            return 0;
-    memset(r->packed, 0, sizeof r->packed);
-    r->ver = r->ver == 3u ? UP_VER_GRID : UP_VER;
-    for (i = 0; i < r->np; i++)
-        r->packed[i] = (uint8_t)(v[i] + 64);
-    return 1;
-}
-static void up_set_cat(up_rec_t *r, uint32_t c)  /* c CAT_BASS..CAT_OTHER; a record that cannot hold one keeps none */
-{
-    if (c && c < CAT_N && up_to_v4(r))
+    if (c && c < CAT_N && r->np <= UP_CAT_AT)
         r->packed[UP_CAT_AT] = (uint8_t)c;
 }
 
 static int up_valid(const up_rec_t *r)
 {
-    if (!(r->used == UP_USED && r->ver >= 1u && r->ver <= UP_VER_GRID && r->engine < NENGINES &&
-          r->np >= 8u && r->np <= (r->ver >= 4u ? UP_PMAX * 2u : UP_PMAX) && r->name[0])) return 0;
-    if (r->ver >= 4u) for (uint32_t i = 0; i < r->np; i++) if (r->packed[i] > 191u) return 0;
+    if (!(r->used == UP_USED && (r->ver == UP_VER_WS || r->ver == UP_VER_WS_GRID) && r->engine < NENGINES &&
+          r->np >= 8u && r->np <= UP_PMAX * 2u && r->name[0])) return 0;
+    for (uint32_t i = 0; i < r->np; i++) if (r->packed[i] > 191u) return 0;
     return 1;
 }
 
 static int up_used(uint32_t k) { return k < UP_SLOTS && up_valid(up_rec(k)); }
 
-static int up_grid(const up_rec_t *r) { return r->ver == 3u || r->ver == UP_VER_GRID; }
-static int16_t up_value(const up_rec_t *r, uint32_t k) { return r->ver >= 4u ? (int16_t)r->packed[k] - 64 : r->p[k]; }
-static void up_set_value(up_rec_t *r, uint32_t k, int16_t v)
-{
-    if (r->ver >= 4u) r->packed[k] = (uint8_t)(v + 64); else r->p[k] = v;
-}
+static int up_grid(const up_rec_t *r) { return r->ver == UP_VER_WS_GRID; }
+static int16_t up_value(const up_rec_t *r, uint32_t k) { return (int16_t)r->packed[k] - 64; }
+static void up_set_value(up_rec_t *r, uint32_t k, int16_t v) { r->packed[k] = (uint8_t)(v + 64); }
 
 static void up_pat_norm(uint8_t *note, uint8_t *flags);
 /* after loading bank b (len bytes, -1 = none): wrong shape -> empty; each record's pattern inside its fields, as
@@ -193,7 +171,7 @@ static int up_parse(const uint8_t *a, uint32_t na, up_rec_t *r, uint32_t *slot)
     r = &staged;
     memset(r, 0, sizeof *r);
     r->used = UP_USED;
-    r->ver = UP_VER;
+    r->ver = UP_VER_WS;
     r->engine = a[1];
     r->np = P_COUNT;
     for (i = 0; i < n; i++)
@@ -205,7 +183,7 @@ static int up_parse(const uint8_t *a, uint32_t na, up_rec_t *r, uint32_t *slot)
             up_set_value(r, i, (int16_t)value);
         }
     if (na >= k + 33u + 16u && a[k + 32u] == 1u) {    /* a drum grid */
-        r->ver = UP_VER_GRID;
+        r->ver = UP_VER_WS_GRID;
         for (i = 0; i < 16u; i++) {
             uint32_t hi = a[k + 33u + i];
             r->note[i] = (uint8_t)((a[k + 2u * i] & 127u) | (hi & 1u) << 7);
@@ -294,6 +272,7 @@ static int up_put(uint32_t k, const up_rec_t *r)
     }
 #endif
     if (!r) {
+        ws_snd_forget(k);                               /* (and what it kept beside the record, ws_sound.c) */
 #ifdef FELUCCA_FAVORITES
         if (favorite_set(NENGINES, k, 0)) settings_save();
 #endif
@@ -354,7 +333,7 @@ static int up_store_cat(uint32_t k, const char *name, uint32_t cat)
     uint32_t i;
     memset(&r, 0, sizeof r);
     r.used = UP_USED;
-    r.ver = UP_VER;
+    r.ver = UP_VER_WS;
     r.engine = TSEL->eng_req;
     r.np = P_COUNT;
     up_set_name(&r, k, name);
@@ -387,10 +366,10 @@ static int up_rename_cat(uint32_t k, const char *name, uint32_t cat)
 
 static void up_pat_load(track_t *t, uint32_t k);
 static uint32_t up_pat_rank(uint32_t slot);
+static int up_has_pat(uint32_t k);
 /* WaveStorm: a user preset is the whole part but its mix: slot k -> the sound (with its own path and sequences), the
- * ARP, SCL, CHORD and pattern
- * settings, and the record's 16-step pattern when it holds one (else the steps stay); LEVEL PAN MUTE stay. One undo
- * (SAVE held) takes it all back. 0 ok, 1 empty */
+ * ARP, SCL, CHORD and pattern settings, and its pattern when it holds one (all 64 steps; else the steps stay); LEVEL
+ * PAN MUTE stay. One undo (SAVE held) takes it all back. 0 ok, 1 empty */
 static int up_load(uint32_t k)
 {
     const up_rec_t *r;
@@ -400,7 +379,7 @@ static int up_load(uint32_t k)
     if (!up_used(k))
         return 1;
     r = up_rec(k);
-    pat = !up_pat_empty(r);
+    pat = (uint32_t)up_has_pat(k);
     up_values(r, v);
     load_begin(t, UNDO_SOUND | (pat ? UNDO_PAT : 0u));
     panic_req |= (uint8_t)(1u << song.sel);
@@ -413,7 +392,7 @@ static int up_load(uint32_t k)
     fm1_irq_on();
     ws_snd_load(t, k);                                  /* WaveStorm: its own path and sequences (ws_sound.c) */
     if (pat) {
-        up_pat_load(t, k);                              /* steps 1..16, LEN (at most 16) DIV SWING GATE */
+        up_pat_load(t, k);                              /* the steps, LEN DIV SWING GATE */
         pat_sig[trk_index(t)] = steps_sig(t);
         pat_last[trk_index(t)] = (uint8_t)(NPATTERNS + up_pat_rank(k) + 1u);
         pat_from[trk_index(t)] = 0;
@@ -425,8 +404,13 @@ static int up_load(uint32_t k)
     return 0;
 }
 
-/* the patterns of the user presets (SAVE > PHRASES lists them after the factory ones, ui.c pat_count) */
-static int up_has_pat(uint32_t k) { return up_used(k) && !up_pat_empty(up_rec(k)); }
+/* the patterns of the user presets (SAVE > PHRASES lists them after the factory ones, ui.c pat_count): its 64 steps
+ * when it keeps them (ws_sound.c), else the record's 16 */
+static int up_has_pat(uint32_t k)
+{
+    const step_t *st = ws_snd_steps(k);
+    return up_used(k) && (st ? !ws_steps_empty(st) : !up_pat_empty(up_rec(k)));
+}
 
 static uint32_t up_pat_count(void)
 {
@@ -453,21 +437,25 @@ static uint32_t up_pat_rank(uint32_t slot)     /* ones that hold a pattern befor
     return n;
 }
 
-/* slot k's pattern -> track t's steps 1..16 (the rest cleared), with the record's LEN (at most 16), DIV,
- * SWING and GATE; the sound stays (ui.c pat_load: the undo copy) */
+/* slot k's pattern -> track t's steps: the 64 it keeps (ws_sound.c), else the record's 16 into steps 1..16 (the rest
+ * cleared, LEN at most 16); with the record's LEN, DIV, SWING and GATE. The sound stays (ui.c pat_load: the undo copy) */
 static void up_pat_load(track_t *t, uint32_t k)
 {
     const up_rec_t *r;
+    const step_t *st = ws_snd_steps(k);
     int16_t v[P_COUNT];
     uint32_t i;
     if (!up_has_pat(k))
         return;
     r = up_rec(k);
     up_values(r, v);
-    load_pat16(t, r->note, r->flags);
+    if (st)
+        memcpy(t->step, st, sizeof t->step);
+    else
+        load_pat16(t, r->note, r->flags);
     for (i = P_SDIV; i <= P_SGATE; i++)
         t->p[i] = v[i];
-    t->p[P_SLEN] = (int16_t)clamp(v[P_SLEN], 1, 16);   /* (the pattern has 16 steps) */
+    t->p[P_SLEN] = (int16_t)clamp(v[P_SLEN], 1, st ? NSTEP : 16);
 }
 
 /* the engine a used slot's sound plays on (STORM: the only one) */

@@ -60,7 +60,8 @@ On Linux x86-64 the toolchain runs natively and Docker is not needed.
 `JIELI_TOOLCHAIN` and `AC79_SDK` override the default locations
 (`~/.jieli/toolchain`, `~/fw-AC79_AIoT_SDK`).
 
-`./build.sh --release 1.8.1` makes a release build: the package identity becomes `FM-1_918`
+`./build.sh --release 1.8.1` makes a release build: the package identity becomes `FM-1_818` (WaveStorm's; a
+development build is `FM-1_800`)
 and the version string `v1.8.1`; the package is `build/wavestorm-1.8.1.fwsc`, and
 `build/release-1.8.1/` holds what a release ships: the package, the app
 (`wavestorm-1.8.1-app.bin`), `SHA256SUMS`, `LICENSE`, `LICENSING.md` and
@@ -82,7 +83,8 @@ Build options (environment, `0` or `1`; defaults in `firmware/src/felucca.c`, `c
 | `FELUCCA_ICONS` | 1 | parameter icons on the knob cards |
 
 `FELUCCA_USB_LAYOUT` (`0` to `3`, default `0`) picks other USB descriptor layouts for testing; see
-`firmware/bsp/chip/usb.c`.
+`firmware/bsp/chip/usb.c`. `FELUCCA_USB_PRODUCT` names the USB device (default `WaveStorm FM-1`; keep "FM-1" in it,
+the installers look for it).
 
 ## Browser demo
 
@@ -93,10 +95,11 @@ python3 -m http.server --bind 127.0.0.1 -d build/emu 8790     # open http://loca
 ```
 
 `web/emu/felucca_web.c` builds the firmware's sources as the host tests do, against a simulated FM-1, and
-Emscripten compiles it to WebAssembly (`build/emu/felucca.wasm`, with `index.html`, `worklet.js` and the font in `fonts/`).
-It is a demo: the page keeps the flash's storage sectors (user presets, settings, the autosave) in the browser; USB
-(audio, MIDI out, the editor, updates) and TRS MIDI are not emulated. Open it at `localhost` or `127.0.0.1` (the audio
-needs a secure context).
+Emscripten compiles it to WebAssembly (`build/emu/felucca.wasm`, with `index.html`, `worklet.js`, the font in `fonts/`
+and the web editor as `editor.html`). It is a demo: the page keeps the flash's storage sectors (user presets, settings,
+the autosave) in the browser; USB (audio, MIDI out, updates) and TRS MIDI are not emulated. The editor protocol is:
+`editor.html` in another tab reaches it through the page (see WAVESTORM.md). Open it at `localhost` or `127.0.0.1`
+(the audio needs a secure context).
 
 ## Tests
 

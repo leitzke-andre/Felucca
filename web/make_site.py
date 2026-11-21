@@ -7,13 +7,13 @@
   firmware/wavestorm-VER.fwsc the package (+ LICENSE, LICENSING.md, LICENSES/: the package holds
                               JieLi SDK files under Apache-2.0, see LICENSING.md)
   webapp/installer/index.html index_pkg.html, self-contained (fm1pkg.js, fm1ota.js, metadata inlined)
+  webapp/editor/index.html    wavestorm-editor.html, as it is (one file)
   src/                        not touched
-(WaveStorm has no web editor: Felucca's editor.html and its backups are not in this tree.)
 
   web/make_site.py build/wavestorm-X.Y.fwsc X.Y OUT_DIR
 
 The package must be one made by tools/fm1pkg_make.py (Felucca's own loader, no vendor files).
-Its identity (FM-1_9xx) is read from the package; the device must report it after
+Its identity (WaveStorm's FM-1_8xx) is read from the package; the device must report it after
 the install.
 """
 import json
@@ -40,8 +40,8 @@ def main(pkg, version, out):
     pkg, out = Path(pkg), Path(out)
     raw = pkg.read_bytes()
     product = product_of(raw)
-    if not re.fullmatch(r"FM-1_9\d\d", product):
-        raise SystemExit(f"{pkg}: identity {product!r} is not a Felucca package (FM-1_9xx)")
+    if not re.fullmatch(r"FM-1_8\d\d", product):
+        raise SystemExit(f"{pkg}: identity {product!r} is not a WaveStorm package (FM-1_8xx)")
     if b"FELUCCA-LOADER-1" not in raw:              # Felucca loader marker: never publish a package with vendor files
         raise SystemExit(f"{pkg}: no Felucca loader in it; the site ships only fm1pkg_make.py packages "
                          "(a package patched from an official one carries vendor files)")
@@ -54,12 +54,13 @@ def main(pkg, version, out):
         if html.count(mark) != 1:
             raise SystemExit(f"index_pkg.html must contain {mark} once; update make_site.py")
     html = html.replace("/*LIB*/", lib).replace("/*META*/", meta)
-    inst, fw = out / "webapp" / "installer", out / "firmware"
-    for d in (inst, fw):
+    inst, fw, ed = out / "webapp" / "installer", out / "firmware", out / "webapp" / "editor"
+    for d in (inst, fw, ed):
         d.mkdir(parents=True, exist_ok=True)
     for old in fw.glob("wavestorm-*.fwsc"):        # one package: the current one
         old.unlink()
     (inst / "index.html").write_text(html, encoding="utf-8")
+    shutil.copy(HERE / "wavestorm-editor.html", ed / "index.html")
     shutil.copy(pkg, fw / name)
     lic = HERE.parent / "LICENSES"                  # the package holds JieLi SDK files (Apache-2.0): their
     (fw / "LICENSES").mkdir(exist_ok=True)          # licence travels next to it, with Felucca's own
@@ -77,7 +78,7 @@ def main(pkg, version, out):
         '<!doctype html><meta charset="utf-8"><title>WaveStorm</title>'
         '<meta http-equiv="refresh" content="0; url=webapp/installer/">'
         '<a href="webapp/installer/">WaveStorm installer</a>\n', encoding="utf-8")
-    print(f"site: {out}: webapp/installer ({len(html)} B), firmware/{name} ({len(raw)} B, {product})")
+    print(f"site: {out}: webapp/installer ({len(html)} B), webapp/editor, firmware/{name} ({len(raw)} B, {product})")
 
 
 if __name__ == "__main__":

@@ -19,7 +19,7 @@ SRC = _ROOT / "firmware" / "src" if (_ROOT / "firmware" / "src").is_dir() else _
 # reaches (ISR_ROOTS and everything they call or name, from the IR) keeps -Os (isr_reach)
 SIZE_FILES = ["ui.c", "favorites.c", "menu_items.c", "icons.c", "ui_graph.c", "ui_draw.c", "ui_menu.c", "ui_input.c",
               "storage.c", "upreset.c", "ws_store.c", "settings_persist.c",
-              "editor.c", "editor_preferences.c", "editor_menu.c", "console.c",
+              "editor.c", "editor_preferences.c", "editor_menu.c", "editor_ws.c", "console.c",
               "../bsp/chip/usb.c", "midi_uart.c", "midi_control.c", "midi_clock.c", "seq.c", "chord.c", "motion.c",
               "panel.c", "lcd.c", "gfx.c", "../bsp/chip/ota.c", "ota_hw.c", "params.c", 
               "ui_layer.c", "ui_name.c", "ui_events.c", "ui_wsedit.c", "ws_sound.c", "main.c", "../bsp/chip/libc.c", "storage_hw.c", "engines.c"]

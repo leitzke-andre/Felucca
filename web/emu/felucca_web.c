@@ -15,8 +15,9 @@
  *   - the screen: lcd_fill / lcd_blit into a 240 x 240 RGB565 frame (the panel's byte order);
  *   - the flash: a 1 MiB NOR image behind storage.c's hooks (settings, projects, user presets, the user
  *     sample slots read through it as XIP); the page keeps its storage sectors and gives them back at boot.
- * Not here: USB (MIDI, audio, the editor, updates), TRS MIDI, the serial console, the battery (full), the
- * crash / UBOOT paths. Nothing of the firmware changes for this file.
+ * Not here: USB (MIDI, audio, updates), TRS MIDI, the serial console, the battery (full), the crash / UBOOT paths.
+ * The editor protocol (editor.c) runs over the page instead of USB (web_sysex, below). Nothing of the firmware changes
+ * for this file but editor.c's two hooks for it, ED_LINK_UP and ED_ROOM.
  *   web/emu/build.sh  ->  build/emu/{felucca.wasm, worklet.js, index.html} */
 #include <stdint.h>
 
@@ -206,6 +207,34 @@ static void fl_plain_window_init(void) {}
 #include "../../firmware/src/upreset.c"
 #include "../../firmware/src/ws_store.c"
 
+/* ------------------------------------- the editor protocol, over the page --- */
+/* editor.c as the device has it, its SysEx through the page instead of USB: a request goes into web_sx_in
+ * (web_sysex, F0..F7), the main loop takes it (ed_service, as main.c does), the replies and pushes collect in
+ * web_sx_out for the page to take (web_sysex_out*). index.html relays them to web/wavestorm-editor.html in another tab
+ * of the same origin (a BroadcastChannel), so the editor can be tried without an FM-1 */
+static uint8_t web_sx_in[640], web_sx_out[8192];
+static uint32_t web_sx_in_n, web_sx_out_n, web_sx_ready;
+static int ota_wire_send(const uint8_t *p, uint32_t n)
+{
+    if (web_sx_out_n + n > sizeof web_sx_out)
+        return -1;
+    memcpy(web_sx_out + web_sx_out_n, p, n);
+    web_sx_out_n += n;
+    return 0;
+}
+static int ota_frame_get(const uint8_t **p, uint32_t *n)
+{
+    if (!web_sx_ready)
+        return 0;
+    *p = web_sx_in;
+    *n = web_sx_in_n;
+    return 1;
+}
+static void ota_frame_done(void) { web_sx_ready = 0; }
+#define ED_LINK_UP() 1                                     /* (the page is there while it runs) */
+#define ED_ROOM() (web_sx_out_n + sizeof ed_out <= sizeof web_sx_out)   /* (a push only with room for a reply) */
+#include "../../firmware/src/editor.c"
+
 /* ------------------------------------------------- main.c and its HAL --- */
 #if FELUCCA_CPU2
 typedef struct { uint32_t magic, count, vec, pc, emu, dbg, rets, core; } fm1_crash_t;
@@ -283,7 +312,7 @@ static void web_power_on(void)
     web_booted = 1;
 }
 
-/* one pass of main.c fm1_main's loop (what the browser has: no USB, editor, UBOOT, console) */
+/* one pass of main.c fm1_main's loop (what the browser has: no USB, UBOOT, console; the editor over the page) */
 static void web_frame(void)
 {
     int32_t b = fm1_adc_read(FM1_ADC_BATT);
@@ -291,6 +320,7 @@ static void web_frame(void)
         song.batt_raw = song.batt_raw ? song.batt_raw + (b - song.batt_raw) / 32 : b;
     master_poll();
     felucca_dbg.ui_frames++;
+    (void)ed_service();                                   /* main.c: the editor's requests (the page's) */
     ui_input();
     settings_poll();
     autosave_poll();
@@ -480,6 +510,29 @@ EXPORT void web_test_heavy(void)
 }
 
 EXPORT uint32_t web_test_user_preset(uint32_t i) { return (uint32_t)up_used(i); }
+
+/* the editor's SysEx (see above): the page writes a request (F0..F7, at most 640 bytes) into web_sysex_buf and calls
+ * web_sysex(n): 1 taken, 2 not yet (the one before is still waiting), 0 never (not a SysEx frame); the replies and pushes are
+ * web_sysex_out_n bytes at web_sysex_out, F0..F7 one after the other, until web_sysex_out_clear */
+EXPORT uint8_t *web_sysex_buf(void) { static uint8_t b[640]; return b; }
+EXPORT uint32_t web_sysex(uint32_t n)
+{
+    const uint8_t *b = web_sysex_buf();
+    if (web_sx_ready)
+        return 2;
+    if (n < 6u || n > sizeof web_sx_in + 2u || b[0] != 0xF0u || b[n - 1u] != 0xF7u)
+        return 0;
+    for (uint32_t i = 1; i + 1u < n; i++)
+        if (b[i] & 0x80u)
+            return 0;
+    memcpy(web_sx_in, b + 1, n - 2u);
+    web_sx_in_n = n - 2u;
+    web_sx_ready = 1;
+    return 1;
+}
+EXPORT uint8_t *web_sysex_out(void) { return web_sx_out; }
+EXPORT uint32_t web_sysex_out_n(void) { return web_sx_out_n; }
+EXPORT void web_sysex_out_clear(void) { web_sx_out_n = 0; }
 
 EXPORT uint16_t *web_screen(void) { return web_fb; }
 EXPORT uint32_t web_screen_draws(void) { return web_draws; }

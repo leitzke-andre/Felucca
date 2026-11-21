@@ -3,8 +3,8 @@
 /* WaveStorm's storage (felucca.c includes it where Felucca had its project.c). WaveStorm is a playable synth, not a
  * groovebox: no project slots or songs. What it keeps in flash:
  *   - the settings (MENU, the panel, favourites, MIDI LEARN: settings_persist.c, OBJ_SETTINGS), as Felucca;
- *   - the user presets (upreset.c): a sound with its 16-step pattern and arp settings, and its own path and
- *     sequences beside them (ws_sound.c);
+ *   - the user presets (upreset.c): a sound with its arp settings and its pattern, its own path, sequences and all
+ *     64 steps beside the record (ws_sound.c);
  *   - the autosave (OBJ_AUTOSAVE): the part as it is (its sound, all 64 steps, its automation) and the global
  *     values, put back at power-on with MENU > SYSTEM > RESTORE LAST ON (the default). Written as Felucca's was:
  *     only when it changed and then stayed the same for AS_IDLE_MS with nothing playing,
@@ -38,18 +38,6 @@ static uint32_t ws_hash(uint32_t h, const void *p, uint32_t n)   /* FNV-1a, cont
     return h;
 }
 static uint32_t ws_state_sum(const ws_state_t *s) { return ws_hash(2166136261u, s, sizeof *s - sizeof s->sum); }   /* (sum: last) */
-
-static void ws_steps(step_t *s)                  /* a loaded sequence inside its fixed fields (as Felucca's proj_steps) */
-{
-    uint32_t i, j;
-    for (i = 0; i < NSTEP; i++) {
-        if (s[i].n > 4u) s[i].n = 4;
-        if (s[i].time > ST_REST) s[i].time = ST_REST;
-        for (j = 0; j < 4u; j++) s[i].note[j] &= 127u;
-        s[i].flags &= SF_ACCENT | SF_SLIDE;
-        s[i].vel &= 127u;
-    }
-}
 
 static void ws_capture(ws_state_t *s)
 {

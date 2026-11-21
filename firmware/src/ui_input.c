@@ -983,6 +983,22 @@ static void ui_notices(void)
     }
 }
 
+/* WaveStorm: the ALGORITHM knob turns X (P_E0, the vector's left-right) of the selected part on every page, as KNOB 1
+ * on HOME does: recorded while automation records, MIDI LEARN can pick it; the top bar shows where it is */
+static void algo_x(int32_t s)
+{
+    track_t *t = TSEL;
+    const param_desc_t *d = param_desc_of(t->eng_req, P_E0);
+    char b[8];
+    const char *u;
+    t->p[P_E0] = (int16_t)param_turn(d, t->p[P_E0], accel(EN_ALGO, s, d->max - d->min));
+    motion_capture(t, P_E0, t->p[P_E0]);
+    ml_knob(t, P_E0);
+    param_format(d, t->p[P_E0], b, &u);
+    str_cpy(b + str_len(b), u, 2);
+    ui_say("X ", b);
+}
+
 static void ui_input(void)
 {
     uint32_t pressed = fm1_input_edges(0), notes = fm1_input_note_edges(), now = fm1_ticks(), id, b, k;
@@ -1237,8 +1253,8 @@ static void ui_input(void)
     kq |= lay;
     if (!lay && (s = panel_enc(EN_PRESET)) != 0)
         presets_turn(s);
-    if (!lay && (s = panel_enc(EN_ALGO)) != 0)     /* ALGORITHM: the selected track, on every page */
-        track_select((uint32_t)clamp((int32_t)song.sel + (s > 0 ? 1 : -1), 0, NTRK - 1));
+    if (!lay && (s = panel_enc(EN_ALGO)) != 0)     /* ALGORITHM: X, on every page */
+        algo_x(s);
     if ((s = glo ? sel : panel_enc(EN_SELECT)) != 0) {   /* SELECT knob = global tempo; */
         if (!glo && sel_mode() >= SEL_MODW) {         /* MENU > SELECT MODW / VEL (1.5.6, #84): it plays */
             sel_play(sel_mode(), s);

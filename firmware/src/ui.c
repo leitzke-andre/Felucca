@@ -705,8 +705,10 @@ static int seq_is_empty(const track_t *t)
  * 1.1.5: a lock or automation edit by hand (a step held and a knob turned, a step's locks cleared, SEQ > AUTOMATION)
  * takes the copy too (UNDO_MOT: SAVE held puts the track's motion back, the sound and the steps stay; motion_undo_take).
  * A sound load keeps the track's motion on the parameters every engine has (load_end, motion.c motion_sound_loaded);
- * a pattern load drops it all (the steps it was on are gone) */
-enum { UNDO_SOUND = 1, UNDO_PAT = 2, UNDO_MOT = 4 };
+ * a pattern load drops it all (the steps it was on are gone).
+ * WaveStorm: an edit on EDIT > PATH .. SEQ SET (ui_wsedit.c) takes the copy as a lock does (UNDO_WS: SAVE held puts
+ * back the sound's own path and sequences and its PATH choice; one copy for one knob's turn) */
+enum { UNDO_SOUND = 1, UNDO_PAT = 2, UNDO_MOT = 4, UNDO_WS = 8 };
 static struct {
     uint8_t trk;                 /* track + 1, 0 = nothing to undo */
     uint8_t keep;                /* the track is as the last load left it (undo.after): a next load keeps the copy */
@@ -821,7 +823,7 @@ static void load_begin(track_t *t, uint32_t what)
     if (undo_depth++)
         return;
     motion_restore(t);
-    if (undo.keep && undo.trk == i + 1u && !(undo.what & UNDO_MOT) && track_sig(t) == undo.after) {
+    if (undo.keep && undo.trk == i + 1u && !(undo.what & (UNDO_MOT | UNDO_WS)) && track_sig(t) == undo.after) {
         undo.what |= (uint8_t)what;               /* browsing on: the copy from before the first load stays */
         load_motion_hold(t, what);
         return;
@@ -862,7 +864,7 @@ static void load_end(track_t *t)
  * values): part of that load, the copy from before it stays */
 static void load_extend(track_t *t)
 {
-    if (undo.keep && undo.trk == trk_index(t) + 1u && !(undo.what & UNDO_MOT) && fm1_ms - undo.t_ms < 1500u) {
+    if (undo.keep && undo.trk == trk_index(t) + 1u && !(undo.what & (UNDO_MOT | UNDO_WS)) && fm1_ms - undo.t_ms < 1500u) {
         undo.after = track_sig(t);
         undo.t_ms = fm1_ms;
     }
@@ -874,8 +876,15 @@ static void load_extend(track_t *t)
  * copy from before its first detent; tag 0 (an add, a delete, a clear, a kind) always takes its own.
  * motion_undo_done after each */
 static uint32_t undo_mot_tag;
-/* what an edit's copy compares (undo.after): the motion; with the steps (UNDO_PAT: step_undo_take) the steps too */
-static uint32_t edit_sig(const track_t *t) { return undo.what & UNDO_PAT ? motion_sig(t) ^ steps_sig(t) : motion_sig(t); }
+/* what an edit's copy compares (undo.after): the motion; with the steps (UNDO_PAT: step_undo_take) the steps too, with
+ * UNDO_WS the sound's path and sequences and its PATH */
+static uint32_t edit_sig(const track_t *t)
+{
+    uint32_t h = undo.what & UNDO_PAT ? motion_sig(t) ^ steps_sig(t) : motion_sig(t);
+    if (undo.what & UNDO_WS)
+        h ^= fnv(fnv(2166136261u, ws_sound(t), sizeof(ws_sound_t)), &t->p[P_E2], sizeof t->p[P_E2]);
+    return h;
+}
 static void edit_undo_take(track_t *t, uint32_t tag, uint32_t what)
 {
     uint32_t i = trk_index(t);
@@ -948,10 +957,15 @@ static void undo_swap(void)
                 t->p[i] = undo.p[i];
                 undo.p[i] = v;
             }
-        {
-            ws_sound_t s = *ws_sound(t);
-            *ws_sound(t) = undo.snd;
-            undo.snd = s;
+    }
+    if (undo.what & (UNDO_SOUND | UNDO_WS)) {     /* (WaveStorm: the sound's path and sequences) */
+        ws_sound_t s = *ws_sound(t);
+        *ws_sound(t) = undo.snd;
+        undo.snd = s;
+        if (!(undo.what & UNDO_SOUND)) {          /* (an edit: and the PATH it put on USER) */
+            int16_t v = t->p[P_E2];
+            t->p[P_E2] = undo.p[P_E2];
+            undo.p[P_E2] = v;
         }
     }
     if (undo.what & UNDO_PAT) {
@@ -984,7 +998,7 @@ static void undo_swap(void)
         sync_reload = 1;
     b[1] = (char)('1' + trk_index(t));             /* (1.8: and what came back) */
     str_cpy(b + 3, undo.what & UNDO_SOUND ? (undo.what & UNDO_PAT ? "SOUND+STEPS" : "SOUND") :
-            undo.what & UNDO_PAT ? "STEPS" : "AUTO", sizeof b - 3u);
+            undo.what & UNDO_WS ? "PATH/SEQ" : undo.what & UNDO_PAT ? "STEPS" : "AUTO", sizeof b - 3u);
     ui_say("UNDO/REDO ", b);
     ui.force = 1;
 }

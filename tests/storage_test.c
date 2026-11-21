@@ -125,8 +125,8 @@ int main(void)
               !memcmp(got, a, sizeof a) && !memcmp(snap, nor, 0xE5000u) && !memcmp(snap + 0xE7000u, nor + 0xE7000u, 0x19000u);
         bad += check("the autosave in its own sectors 0xE5000 / 0xE6000, nothing else touched", ok);
     }
-    {   /* WaveStorm: the user presets' paths and sequences (ws_sound.c), 8 objects in Felucca's sample slots'
-         * sectors 0xA0000..0xAFFFF: each its own pair, none another object's */
+    {   /* WaveStorm: the user presets' paths, sequences and steps (ws_sound.c), 16 objects in Felucca's sample
+         * slots' sectors 0xA0000..0xBFFFF: each its own pair, none another object's */
         uint32_t o, q, c, d, ok = 1;
         for (o = OBJ_WSSND0; o < OBJ_COUNT; o++)
             for (c = 0; c < 2u; c++) {
@@ -137,8 +137,8 @@ int main(void)
                         if (q != o || d != c)
                             ok &= st_sector(q, d) != a0 || ((q == OBJ_FM6BANK || q == OBJ_UPFM6) && (o == OBJ_FM6BANK || o == OBJ_UPFM6));
             }
-        ok &= OBJ_COUNT == OBJ_WSSND0 + 8u && st_sector(OBJ_COUNT - 1u, 1) + 4096u <= 0xB0000u;
-        bad += check("WaveStorm's sounds: 8 objects at 0xA0000..0xAFFFF, each a pair of its own", ok);
+        ok &= OBJ_COUNT == OBJ_WSSND0 + 16u && st_sector(OBJ_COUNT - 1u, 1) + 4096u == 0xC0000u;
+        bad += check("WaveStorm's sounds: 16 objects at 0xA0000..0xBFFFF, each a pair of its own", ok);
     }
     {
         static uint8_t bank[3472], back[3728], tab[3728];

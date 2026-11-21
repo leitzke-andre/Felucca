@@ -1,0 +1,700 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-only
+     Copyright (C) 2026 André Leitzke Junior
+     WaveStorm's editor: the selected sound's own vector path (PATH USER) and wave sequences (SEQ1..SEQ4), the X / Y
+     place, PATH and the corners' waves, over the editor protocol (firmware/src/editor.c, editor_ws.c: cmds 84-86;
+     web/EDITOR_PROTOCOL.md). It talks to an FM-1 running WaveStorm over Web MIDI (Chrome or Edge: SysEx), or to the
+     browser demo (web/emu) open in another tab of the same site, through a BroadcastChannel. One file, no build. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WaveStorm editor</title>
+<meta name="description" content="Edit a WaveStorm sound's vector path and wave sequences from the computer.">
+<style>
+:root { --bg: #081210; --surf: #0e1d1a; --raise: #142824; --line: #1f3a34; --dim: #45675f; --mid: #9fb8b1;
+        --text: #e2f4ee; --theme: #89ccba; --accent: #ffb078; --bad: #ff6a5c; color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); }
+body { font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; }
+header { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; justify-content: space-between;
+         max-width: 1180px; margin: 0 auto; padding: 20px 16px 8px; }
+h1 { margin: 0; font-size: 20px; letter-spacing: .06em; font-weight: 700; }
+h1 span { color: var(--theme); font-weight: 500; }
+h2 { margin: 0 0 12px; font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--mid); font-weight: 600; }
+h2 small { color: var(--dim); letter-spacing: .06em; margin-left: 6px; }
+.conn { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pill { padding: 3px 10px; border-radius: 99px; background: var(--raise); color: var(--mid); font-size: 12px; }
+.pill.on { background: color-mix(in srgb, var(--theme) 22%, transparent); color: var(--theme); }
+.pill.bad { background: color-mix(in srgb, var(--bad) 20%, transparent); color: var(--bad); }
+button, select, input { font: inherit; color: inherit; }
+button { background: var(--raise); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+button:hover { border-color: var(--dim); }
+button[aria-pressed="true"], button[aria-selected="true"] { background: var(--theme); color: var(--bg); border-color: var(--theme); }
+button:focus-visible, select:focus-visible, input:focus-visible, canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+select, input[type=number] { background: var(--surf); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
+input[type=number] { width: 72px; font-variant-numeric: tabular-nums; }
+input[type=range] { accent-color: var(--theme); width: 100%; }
+main { display: grid; grid-template-columns: minmax(0, 440px) minmax(0, 1fr); gap: 16px; max-width: 1180px; margin: 0 auto;
+       padding: 8px 16px 24px; }
+main.off { opacity: .45; pointer-events: none; }
+.card { background: var(--surf); border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
+.stack { display: grid; gap: 16px; align-content: start; min-width: 0; }
+canvas { display: block; width: 100%; touch-action: none; }
+#pad { aspect-ratio: 1; border-radius: 8px; cursor: crosshair; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 10px; }
+.row label { display: flex; align-items: center; gap: 8px; color: var(--mid); }
+.xy { display: grid; grid-template-columns: 18px 1fr 44px; align-items: center; gap: 8px; margin-top: 8px; color: var(--mid); }
+.xy output { text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
+.corners { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; margin-top: 12px; }
+.corners label { display: grid; grid-template-columns: 20px 1fr; align-items: center; gap: 6px; color: var(--mid); }
+.corners select { width: 100%; min-width: 0; }
+table { border-collapse: collapse; width: 100%; margin-top: 10px; font-variant-numeric: tabular-nums; }
+th { text-align: left; color: var(--mid); font-weight: 500; font-size: 12px; padding: 4px 6px; }
+td { padding: 3px 6px; border-top: 1px solid var(--line); }
+td:first-child { color: var(--theme); width: 32px; }
+tr.past td { opacity: .35; }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.lane { margin-top: 14px; }
+.lane-h { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-bottom: 4px; }
+.lane-h b { min-width: 52px; letter-spacing: .08em; font-size: 12px; color: var(--theme); }
+.lane-h label { display: flex; align-items: center; gap: 6px; color: var(--mid); font-size: 12px; }
+.lane-h input[type=number] { width: 56px; padding: 2px 4px; }
+.lane canvas { height: 64px; border-radius: 6px; cursor: ns-resize; }
+.lane canvas.short { height: 30px; }
+#readout { min-height: 1.5em; margin: 12px 0 0; color: var(--mid); font-variant-numeric: tabular-nums; }
+.hint { color: var(--dim); font-size: 12px; margin: 10px 0 0; }
+footer { max-width: 1180px; margin: 0 auto; padding: 0 16px 28px; color: var(--dim); font-size: 12px; }
+footer a { color: var(--mid); }
+#err { color: var(--bad); }
+@media (max-width: 900px) { main { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>WaveStorm <span>editor</span></h1>
+  <div class="conn">
+    <span id="status" class="pill" role="status">Not connected</span>
+    <button id="usb" type="button">Connect FM-1 (USB)</button>
+    <button id="emu" type="button">Connect emulator</button>
+  </div>
+</header>
+<p id="err" class="hint" style="max-width:1180px;margin:0 auto;padding:0 16px" role="alert"></p>
+<main id="app" class="off">
+  <div class="stack">
+    <section class="card" aria-labelledby="h-vec">
+      <h2 id="h-vec">Vector</h2>
+      <canvas id="pad" width="440" height="440" tabindex="0"
+              aria-label="The vector square: drag the cross for X and Y, drag a numbered point to shape the USER path"></canvas>
+      <div class="xy"><span>X</span><input type="range" id="x" min="0" max="127" aria-label="X"><output id="xo"></output></div>
+      <div class="xy"><span>Y</span><input type="range" id="y" min="0" max="127" aria-label="Y"><output id="yo"></output></div>
+      <div class="row"><label>PATH <select id="path"></select></label></div>
+      <div class="corners" id="corners"></div>
+      <p class="hint">The path moves around the cross (the X / Y knobs). Moving a point puts PATH on USER, as editing it on
+        the FM-1 does. Hold SAVE on the FM-1 to undo an edit.</p>
+    </section>
+    <section class="card" aria-labelledby="h-path">
+      <h2 id="h-path">Path <small>USER</small></h2>
+      <div class="row">
+        <label>POINTS <input type="number" id="npts" min="1" max="8"></label>
+        <label>LOOP <select id="loop"></select></label>
+      </div>
+      <table><thead><tr><th>#</th><th>X %</th><th>Y %</th><th>TIME ms</th></tr></thead><tbody id="pts"></tbody></table>
+    </section>
+  </div>
+  <section class="card" aria-labelledby="h-seq">
+    <h2 id="h-seq">Wave sequences</h2>
+    <div class="tabs" role="tablist" id="tabs"></div>
+    <div class="row">
+      <label>MODE <select id="mode"><option value="1">LOOP</option><option value="2">PING-PONG</option><option value="0">ONE-SHOT</option></select></label>
+      <label><input type="checkbox" id="sync"> SYNC to tempo</label>
+      <span id="usedby" class="hint" style="margin:0"></span>
+    </div>
+    <div class="row" role="group" aria-label="What dragging the steps sets">
+      <span class="hint" style="margin:0">Draw</span>
+      <button type="button" id="dv" aria-pressed="true">Value</button>
+      <button type="button" id="dc" aria-pressed="false">Chance</button>
+    </div>
+    <div id="lanes"></div>
+    <p id="readout" aria-live="polite"></p>
+    <p class="hint">Drag across the steps to draw; the mouse wheel over a step moves it by one. Steps past a lane's LEN are
+      kept but not played; the tick above a lane is its LOOP point.</p>
+  </section>
+</main>
+<footer>WaveStorm · GPL-3.0 · the FM-1 needs WaveStorm installed and Chrome or Edge (Web MIDI with SysEx). Without one, open
+  the browser demo in another tab of this site and choose “Connect emulator”.</footer>
+
+<script>
+"use strict";
+// ---------------------------------------------------------------- protocol (firmware/src/editor.c, editor_ws.c)
+const HDR = [0x7D, 0x46, 0x4C];
+const C = { INFO: 1, GET: 2, SET: 3, WATCH: 22, CHANGED: 23, RELOAD: 24, PING: 25, WS_GET: 84, WS_SET: 85, WS_CHANGED: 86 };
+const v14 = (v) => { const u = Math.max(-8192, Math.min(8191, Math.round(v))) + 8192; return [u & 127, u >> 7]; };
+const rv14 = (a, i) => (a[i] | a[i + 1] << 7) - 8192;
+const u15 = (v) => { const u = Math.max(-16384, Math.min(16384, Math.round(v))) + 16384; return [u & 127, (u >> 7) & 127, u >> 14]; };
+const ru15 = (a, i) => (a[i] | a[i + 1] << 7 | (a[i + 2] & 3) << 14) - 16384;
+function cstr(a, i) { let s = ""; for (; i < a.length && a[i]; i++) s += String.fromCharCode(a[i]); return s; }
+function cstrs(a, i, n) { const out = []; for (let k = 0; k < n; k++) { const s = cstr(a, i); out.push(s); i += s.length + 1; } return out; }
+
+class Link {                                    // one request at a time: the FM-1 holds one frame until it is read
+  constructor() { this.waiting = []; this.chain = Promise.resolve(); this.onpush = null; this.onclose = null; }
+  frames(bytes) {
+    let s = -1;
+    for (let i = 0; i < bytes.length; i++) {
+      if (bytes[i] === 0xF0) s = i;
+      else if (bytes[i] === 0xF7 && s >= 0) { this.frame(bytes.slice(s, i + 1)); s = -1; }
+    }
+  }
+  frame(f) {
+    if (f.length < 6 || f[1] !== HDR[0] || f[2] !== HDR[1] || f[3] !== HDR[2]) return;
+    const cmd = f[4], args = Array.from(f.slice(5, -1));
+    const k = this.waiting.findIndex((w) => w.cmd === cmd);
+    if (k >= 0 && cmd !== C.CHANGED && cmd !== C.RELOAD && cmd !== C.WS_CHANGED) {
+      const [w] = this.waiting.splice(k, 1);
+      clearTimeout(w.timer);
+      w.res(args);
+    } else if (this.onpush) this.onpush(cmd, args);
+  }
+  req(cmd, args = []) {
+    const run = () => new Promise((res, rej) => {
+      const w = { cmd, res, timer: 0 };
+      w.timer = setTimeout(() => { this.waiting.splice(this.waiting.indexOf(w), 1); rej(new Error(`no reply (command ${cmd})`)); }, 1500);
+      this.waiting.push(w);
+      this.send([0xF0, ...HDR, cmd, ...args, 0xF7]);
+    });
+    const p = this.chain.then(run, run);
+    this.chain = p.catch(() => {});
+    return p;
+  }
+}
+class EmuLink extends Link {                    // the browser demo in another tab (web/emu/index.html relays)
+  constructor() {
+    super();
+    this.bc = new BroadcastChannel("wavestorm-editor");
+    this.bc.onmessage = (e) => {
+      const m = e.data || {};
+      if (m.type === "sysex") this.frames(Uint8Array.from(m.data));
+      else if (m.type === "here" && this.hello) { this.hello(true); this.hello = null; }
+      else if (m.type === "gone" && this.onclose) this.onclose("The emulator tab stopped.");
+    };
+  }
+  find() {
+    return new Promise((res) => {
+      this.hello = res;
+      this.bc.postMessage({ type: "hello" });
+      setTimeout(() => { if (this.hello) { this.hello = null; res(false); } }, 700);
+    });
+  }
+  send(b) { this.bc.postMessage({ type: "sysex", data: b }); }
+  close() { this.bc.close(); }
+}
+class MidiLink extends Link {
+  async find() {
+    const access = await navigator.requestMIDIAccess({ sysex: true });
+    for (const input of access.inputs.values()) {
+      if (!/wavestorm|fm-1|felucca/i.test(input.name || "")) continue;   // (never probe other gear)
+      const output = [...access.outputs.values()].find((o) => o.name === input.name);
+      if (!output) continue;
+      this.input = input;
+      this.output = output;
+      input.onmidimessage = (e) => this.frames(e.data);
+      try {
+        const info = await this.req(C.INFO);
+        if (cstr(info, 0).startsWith("WAVESTORM")) {
+          access.onstatechange = (e) => { if (e.port === input && e.port.state === "disconnected" && this.onclose) this.onclose("The FM-1 was unplugged."); };
+          return true;
+        }
+      } catch (_) { /* not answering: the next port */ }
+      input.onmidimessage = null;
+    }
+    return false;
+  }
+  send(b) { this.output.send(b); }
+  close() { if (this.input) this.input.onmidimessage = null; }
+}
+
+// ---------------------------------------------------------------- the model
+const LANES = ["TIME", "WAVE", "PITCH", "LEVEL"], LO = [0, 0, 40, 0];
+const SYNC_N = ["1/64", "1/32T", "1/32", "1/16T", "1/16", "1/8T", "1/16.", "1/8", "1/4T", "1/8.", "1/4", "1/4.", "1/2", "1/2.", "1 BAR", "2 BAR"];
+const S = {
+  link: null, pe0: 0, nwaves: 48, nbseq: 10, upath: 10, upts: 8, nuseq: 4, lsteps: 16,
+  src: [], paths: [], p: [64, 64, 0, 64, 0, 1, 2, 3],   // X Y PATH RATE WAV A..D (P_E0..P_E7)
+  path: { n: 1, loop: 255, pts: [] }, seq: [], cur: 0, draw: "v",
+  dirty: new Set(), busy: new Set(), sel: null,
+};
+const HI = () => [127, S.nwaves - 1, 88, 127];
+const timeMs = (c) => Math.round(5 * 2 ** (c / 12));
+
+function seqFrom(a, i) {
+  const q = { mode: a[i], sync: a[i + 1], lanes: [], xf: [] };
+  i += 2;
+  for (let l = 0; l < 4; l++) {
+    q.lanes.push({ len: a[i], loop: a[i + 1], v: a.slice(i + 2, i + 18), miss: a.slice(i + 18, i + 34) });
+    i += 34;
+  }
+  q.xf = a.slice(i, i + 16);
+  return q;
+}
+function seqBytes(q) {
+  const b = [q.mode, q.sync ? 1 : 0];
+  for (const l of q.lanes) b.push(l.len, l.loop, ...l.v, ...l.miss);
+  return b.concat(q.xf).map((x) => x & 127);
+}
+function pathFrom(a, i) {
+  const p = { n: a[i], loop: a[i + 1] === 127 ? 255 : a[i + 1], pts: [] };
+  i += 2;
+  for (let k = 0; k < S.upts; k++, i += 8) p.pts.push({ x: ru15(a, i), y: ru15(a, i + 3), ms: rv14(a, i + 6) });
+  return p;
+}
+function pathBytes(p) {
+  const b = [p.n, p.loop === 255 ? 127 : p.loop];
+  for (const q of p.pts) b.push(...u15(q.x), ...u15(q.y), ...v14(q.ms));
+  return b;
+}
+
+// ---------------------------------------------------------------- talking to it
+const $ = (id) => document.getElementById(id);
+function say(text, kind = "") { const s = $("status"); s.textContent = text; s.className = "pill " + kind; }
+function fail(e) { $("err").textContent = e ? String(e.message || e) : ""; }
+
+async function getPart(part) {
+  const a = await S.link.req(C.WS_GET, [part]);
+  if (a[0] !== part || a[1]) throw new Error("WS_GET refused");
+  if (S.dirty.has(part) || S.busy.has(part)) return;   // (a local edit is on its way: it wins)
+  if (part === 0) S.path = pathFrom(a, 2);
+  else S.seq[part - 1] = seqFrom(a, 2);
+}
+async function getParams() {
+  for (let k = 0; k < 8; k++) {
+    const a = await S.link.req(C.GET, [0, S.pe0 + k]);
+    S.p[k] = rv14(a, 2);
+  }
+}
+async function readAll() {
+  await getParams();
+  for (let part = 0; part <= S.nuseq; part++) await getPart(part);
+  render();
+}
+let paramPending = new Map(), paramBusy = false;
+function setParam(k, v) {                         // X Y PATH WAV: the latest value of each, one request at a time
+  S.p[k] = v;
+  paramPending.set(k, v);
+  if (paramBusy) return;
+  paramBusy = true;
+  (async () => {
+    while (paramPending.size) {
+      const [k2, v2] = paramPending.entries().next().value;
+      paramPending.delete(k2);
+      try { await S.link.req(C.SET, [0, S.pe0 + k2, ...v14(v2)]); } catch (e) { fail(e); }
+    }
+    paramBusy = false;
+  })();
+}
+function edited(part) {                           // a part changed here: sent at once, or when the one in flight is back
+  S.dirty.add(part);
+  if (part === 0) S.p[2] = S.upath;               // (the device puts PATH on USER too)
+  render();
+  flush(part);
+}
+async function flush(part) {
+  if (S.busy.has(part) || !S.dirty.has(part)) return;
+  S.busy.add(part);
+  S.dirty.delete(part);
+  const data = part === 0 ? pathBytes(S.path) : seqBytes(S.seq[part - 1]);
+  try {
+    const a = await S.link.req(C.WS_SET, [part, ...data]);
+    if (a[1]) throw new Error("the device refused the data");
+    if (!S.dirty.has(part)) {                     // what it kept (inside its ranges), unless edited again meanwhile
+      if (part === 0) S.path = pathFrom(a, 2); else S.seq[part - 1] = seqFrom(a, 2);
+      render();
+    }
+  } catch (e) { fail(e); }
+  S.busy.delete(part);
+  if (S.dirty.has(part)) flush(part);
+}
+function onPush(cmd, a) {
+  if (cmd === C.CHANGED && a[0] === 0 && a[1] >= S.pe0 && a[1] < S.pe0 + 8) {
+    if (!paramPending.has(a[1] - S.pe0)) { S.p[a[1] - S.pe0] = rv14(a, 2); render(); }
+  } else if (cmd === C.RELOAD) readAll().catch(fail);
+  else if (cmd === C.WS_CHANGED && a[0] <= S.nuseq) getPart(a[0]).then(render, fail);
+}
+let pinger = 0;
+async function connect(kind) {
+  fail();
+  if (S.link) { S.link.close(); S.link = null; clearInterval(pinger); }
+  $("app").className = "off";
+  say("Looking…");
+  try {
+    const link = kind === "emu" ? new EmuLink() : new MidiLink();
+    if (kind === "usb" && !navigator.requestMIDIAccess) throw new Error("This browser has no Web MIDI: use Chrome or Edge.");
+    if (!(await link.find())) {
+      throw new Error(kind === "emu" ? "No emulator found: open the browser demo (index.html) in another tab of this site and switch it on."
+                                     : "No FM-1 running WaveStorm answered (USB cable? another app using it?).");
+    }
+    const info = await link.req(C.INFO);
+    const name = cstr(info, 0);
+    if (!name.startsWith("WAVESTORM")) throw new Error(`This is ${name || "something else"}, not WaveStorm.`);
+    let i = name.length + 1;
+    S.pe0 = info[i + 4];
+    let j = i + 5;                                // after the engines' names, NTRK and the song rows: the tags
+    for (let e = 0; e < info[i]; e++) j += cstr(info, j).length + 1;
+    const t = info.findIndex((b, k) => k >= j + 2 && b === 0x58 && info[k + 1] === 1);
+    if (t < 0) throw new Error("This WaveStorm has no path and sequence commands (update it).");
+    [S.nuseq, S.upts, , S.lsteps, S.nwaves, S.nbseq, S.upath] = info.slice(t + 2, t + 9);
+    S.link = link;
+    link.onpush = onPush;
+    link.onclose = (why) => { say("Disconnected", "bad"); fail(why); $("app").className = "off"; clearInterval(pinger); };
+    let a = await link.req(C.WS_GET, [5]);
+    S.src = cstrs(a, 3, a[2]);
+    a = await link.req(C.WS_GET, [6]);
+    S.paths = cstrs(a, 3, a[2]);
+    S.seq = [];
+    buildStatic();
+    await readAll();
+    await link.req(C.WATCH, [1]);
+    pinger = setInterval(() => link.req(C.PING).catch(() => {}), 1000);   // (WATCH lapses after 3 s without a request)
+    say(`${kind === "emu" ? "Emulator" : "FM-1"} · ${name.slice(10)}`, "on");
+    $("app").className = "";
+    render();
+  } catch (e) {
+    say("Not connected", "bad");
+    fail(e);
+  }
+}
+$("usb").onclick = () => connect("usb");
+$("emu").onclick = () => connect("emu");
+
+// ---------------------------------------------------------------- the page
+const CSS = getComputedStyle(document.documentElement);
+const col = (n) => CSS.getPropertyValue("--" + n).trim();
+function opt(sel, names, val) {
+  sel.replaceChildren(...names.map((n, i) => { const o = document.createElement("option"); o.value = i; o.textContent = n; return o; }));
+  if (val !== undefined) sel.value = val;
+}
+function buildStatic() {
+  opt($("path"), S.paths);
+  const cs = $("corners");
+  cs.replaceChildren();
+  for (let c = 0; c < 4; c++) {
+    const l = document.createElement("label"), s = document.createElement("select");
+    l.append("ABCD"[c], s);
+    s.id = "wav" + c;
+    s.setAttribute("aria-label", "WAV " + "ABCD"[c]);
+    opt(s, S.src);
+    s.onchange = () => setParam(4 + c, +s.value);
+    cs.append(l);
+  }
+  const tabs = $("tabs");
+  tabs.replaceChildren();
+  for (let q = 0; q < S.nuseq; q++) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.role = "tab";
+    b.textContent = "SEQ" + (q + 1);
+    b.onclick = () => { S.cur = q; S.sel = null; render(); };
+    tabs.append(b);
+  }
+  const lanes = $("lanes");
+  lanes.replaceChildren();
+  for (let l = 0; l <= 4; l++) {                  // the four lanes, then TIME's crossfades
+    const d = document.createElement("div"), h = document.createElement("div"), c = document.createElement("canvas");
+    d.className = "lane";
+    h.className = "lane-h";
+    const b = document.createElement("b");
+    b.textContent = l < 4 ? LANES[l] : "XFADE";
+    h.append(b);
+    if (l < 4) {
+      for (const [what, lo] of [["LEN", 1], ["LOOP", 1]]) {
+        const lab = document.createElement("label"), inp = document.createElement("input");
+        inp.type = "number";
+        inp.min = lo;
+        inp.max = 16;
+        inp.id = `${what}${l}`;
+        inp.onchange = () => {
+          const q = S.seq[S.cur], ln = q.lanes[l], v = Math.max(1, Math.min(16, inp.value | 0));
+          if (what === "LEN") {
+            for (let k = ln.len; k < v; k++) {      // (as the device: a new step the last one's value, always playing)
+              ln.v[k] = ln.v[k - 1];
+              ln.miss[k] = 0;
+              if (l === 0) q.xf[k] = q.xf[k - 1];
+            }
+            ln.len = v;
+            ln.loop = Math.min(ln.loop, v - 1);
+          } else ln.loop = Math.min(v, ln.len) - 1;
+          edited(S.cur + 1);
+        };
+        lab.append(what, inp);
+        h.append(lab);
+      }
+    } else c.className = "short";
+    c.id = "lane" + l;
+    c.tabIndex = 0;
+    c.setAttribute("aria-label", (l < 4 ? LANES[l] : "TIME's crossfades") + " lane: 16 steps");
+    laneInput(c, l);
+    d.append(h, c);
+    lanes.append(d);
+  }
+}
+
+// the vector square: Q15 0..32767 both ways, A top left, B top right, C bottom left, D bottom right (as ui_graph.c)
+const pad = $("pad");
+const M = 22;
+function fit(cv) {                                // the canvas at the screen's pixels
+  const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  const g = cv.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return [g, r.width, r.height];
+}
+const knob = () => [Math.min(32767, S.p[0] * 258), Math.min(32767, S.p[1] * 258)];
+function toPad(q, size) { return M + Math.max(0, Math.min(32767, q)) / 32767 * (size - 2 * M); }
+function fromPad(px, size) { return Math.round((px - M) / (size - 2 * M) * 32767); }
+function drawPad() {
+  const [g, w] = fit(pad), [kx, ky] = knob(), user = S.p[2] === S.upath;
+  g.fillStyle = col("bg");
+  g.fillRect(0, 0, w, w);
+  g.strokeStyle = col("line");
+  g.lineWidth = 1;
+  g.strokeRect(M - .5, M - .5, w - 2 * M + 1, w - 2 * M + 1);
+  g.beginPath();
+  g.moveTo(w / 2, M); g.lineTo(w / 2, w - M); g.moveTo(M, w / 2); g.lineTo(w - M, w / 2);
+  g.stroke();
+  const x = kx / 32767, y = ky / 32767, gain = [(1 - x) * (1 - y), x * (1 - y), (1 - x) * y, x * y];
+  g.font = "600 12px -apple-system, Helvetica, Arial, sans-serif";
+  for (let c = 0; c < 4; c++) {                   // the corners: their letter and wave, as bright as their share
+    const right = c & 1, bottom = c & 2;
+    g.globalAlpha = .35 + .65 * gain[c];
+    g.fillStyle = col("theme");
+    g.textAlign = right ? "right" : "left";
+    g.textBaseline = bottom ? "bottom" : "top";
+    g.fillText(`${"ABCD"[c]} ${S.src[S.p[4 + c]] || ""}`, right ? w - 4 : 4, bottom ? w - 3 : 3);
+  }
+  g.globalAlpha = 1;
+  const P = S.path, pts = P.pts.slice(0, P.n).map((p) => [toPad(kx + p.x, w), toPad(ky + p.y, w)]);
+  if (pts.length > 1) {                           // the USER path around the cross; the loop back dashed
+    g.strokeStyle = user ? col("theme") : col("dim");
+    g.lineWidth = 2;
+    g.beginPath();
+    pts.forEach(([px, py], i) => (i ? g.lineTo(px, py) : g.moveTo(px, py)));
+    g.stroke();
+    if (P.loop !== 255 && P.loop < P.n) {
+      g.setLineDash([4, 4]);
+      g.strokeStyle = col("dim");
+      g.beginPath();
+      g.moveTo(...pts[pts.length - 1]);
+      g.lineTo(...pts[P.loop]);
+      g.stroke();
+      g.setLineDash([]);
+    }
+  }
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.font = "700 11px -apple-system, Helvetica, Arial, sans-serif";
+  pts.forEach(([px, py], i) => {
+    const on = drag && drag.point === i;
+    g.fillStyle = on ? col("accent") : user ? col("theme") : col("dim");
+    g.beginPath();
+    g.arc(px, py, 9, 0, 7);
+    g.fill();
+    g.fillStyle = col("bg");
+    g.fillText(i + 1, px, py + .5);
+  });
+  const cx = toPad(kx, w), cy = toPad(ky, w);     // the knobs: a cross
+  g.strokeStyle = col("text");
+  g.lineWidth = 2;
+  g.beginPath();
+  g.moveTo(cx - 9, cy); g.lineTo(cx + 9, cy); g.moveTo(cx, cy - 9); g.lineTo(cx, cy + 9);
+  g.stroke();
+}
+let drag = null;
+function padPos(e) { const r = pad.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top, r.width]; }
+pad.addEventListener("pointerdown", (e) => {
+  if (!S.link) return;
+  const [px, py, w] = padPos(e), [kx, ky] = knob();
+  let best = -1, bd = 14 * 14;
+  S.path.pts.slice(0, S.path.n).forEach((p, i) => {
+    const dx = toPad(kx + p.x, w) - px, dy = toPad(ky + p.y, w) - py;
+    if (dx * dx + dy * dy < bd) { bd = dx * dx + dy * dy; best = i; }
+  });
+  drag = { point: best };
+  pad.setPointerCapture(e.pointerId);
+  padMove(e);
+});
+pad.addEventListener("pointermove", (e) => { if (drag) padMove(e); });
+pad.addEventListener("pointerup", () => { drag = null; drawPad(); });
+pad.addEventListener("pointercancel", () => { drag = null; drawPad(); });
+function padMove(e) {
+  const [px, py, w] = padPos(e), qx = fromPad(px, w), qy = fromPad(py, w);
+  if (drag.point >= 0) {
+    const [kx, ky] = knob(), p = S.path.pts[drag.point];
+    p.x = Math.max(-16384, Math.min(16384, qx - kx));
+    p.y = Math.max(-16384, Math.min(16384, qy - ky));
+    edited(0);
+  } else {
+    const x = Math.max(0, Math.min(127, Math.round(qx / 258))), y = Math.max(0, Math.min(127, Math.round(qy / 258)));
+    if (x !== S.p[0]) setParam(0, x);
+    if (y !== S.p[1]) setParam(1, y);
+    render();
+  }
+}
+pad.addEventListener("keydown", (e) => {          // the arrows move X / Y
+  const d = { ArrowLeft: [0, -1], ArrowRight: [0, 1], ArrowUp: [1, -1], ArrowDown: [1, 1] }[e.key];
+  if (!d || !S.link) return;
+  e.preventDefault();
+  setParam(d[0], Math.max(0, Math.min(127, S.p[d[0]] + d[1] * (e.shiftKey ? 8 : 1))));
+  render();
+});
+for (const k of [0, 1]) $(k ? "y" : "x").addEventListener("input", (e) => { setParam(k, +e.target.value); render(); });
+$("path").onchange = (e) => { setParam(2, +e.target.value); render(); };
+$("npts").onchange = (e) => {
+  const P = S.path, n = Math.max(1, Math.min(S.upts, e.target.value | 0));
+  for (let i = P.n; i < n; i++) P.pts[i] = { ...P.pts[i - 1], ms: 250 };   // (as the device: a new point where the last is)
+  P.n = n;
+  if (P.loop !== 255 && P.loop >= n) P.loop = n - 1;
+  edited(0);
+};
+$("loop").onchange = (e) => { S.path.loop = +e.target.value; edited(0); };
+$("mode").onchange = (e) => { S.seq[S.cur].mode = +e.target.value; edited(S.cur + 1); };
+$("sync").onchange = (e) => { S.seq[S.cur].sync = e.target.checked ? 1 : 0; edited(S.cur + 1); };
+for (const [id, d] of [["dv", "v"], ["dc", "c"]]) $(id).onclick = () => { S.draw = d; render(); };
+
+function drawPoints() {
+  const tb = $("pts"), P = S.path;
+  if (tb.children.length !== S.upts) {
+    tb.replaceChildren();
+    for (let i = 0; i < S.upts; i++) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${i + 1}</td>` + ["x", "y", "ms"].map((f) =>
+        `<td><input type="number" data-f="${f}" data-i="${i}" ${f === "ms" ? 'min="5" max="7680"' : 'min="-100" max="100"'}
+           aria-label="Point ${i + 1} ${f === "ms" ? "time, ms" : f.toUpperCase() + ", %"}"></td>`).join("");
+      tb.append(tr);
+    }
+    tb.onchange = (e) => {
+      const f = e.target.dataset.f, p = S.path.pts[+e.target.dataset.i], v = +e.target.value;
+      if (!f || !p || !Number.isFinite(v)) return;
+      p[f] = f === "ms" ? Math.max(5, Math.min(7680, Math.round(v))) : Math.round(Math.max(-100, Math.min(100, v)) * 16384 / 100);
+      edited(0);
+    };
+  }
+  [...tb.children].forEach((tr, i) => {
+    tr.className = i < P.n ? "" : "past";
+    const p = P.pts[i] || { x: 0, y: 0, ms: 0 };
+    for (const inp of tr.querySelectorAll("input")) {
+      if (document.activeElement === inp) continue;
+      const f = inp.dataset.f;
+      inp.value = f === "ms" ? p.ms : Math.round(p[f] * 100 / 16384);
+      inp.disabled = i >= P.n;
+    }
+  });
+  $("npts").value = P.n;
+  if ($("loop").options.length !== P.n + 1) {     // (rebuilt only when the points change: an open list stays open)
+    opt($("loop"), ["OFF", ...Array.from({ length: P.n }, (_, i) => `to point ${i + 1}`)]);
+    [...$("loop").options].forEach((o, i) => { o.value = i ? i - 1 : 255; });
+  }
+  $("loop").value = P.loop === 255 ? 255 : P.loop;
+}
+
+// the lanes: 16 steps each, a bar as high as its value (PITCH from the middle); Chance: as high as its chance
+function stepText(q, l, k) {
+  const ln = q.lanes[l], v = ln.v[k];
+  const val = l === 0 ? (q.sync ? SYNC_N[(v & 127) >> 3] : `${timeMs(v)} ms`) : l === 1 ? S.src[v] || v
+            : l === 2 ? `${v - 64 > 0 ? "+" : ""}${v - 64} st` : `${Math.round(v * 100 / 127)} %`;
+  return `SEQ${S.cur + 1} · ${LANES[l]} · step ${k + 1}: ${val} · chance ${100 - ln.miss[k]} %` +
+         (l === 0 ? ` · crossfade ${q.xf[k]} %` : "") + (k >= ln.len ? " · past LEN" : "");
+}
+function drawLane(l) {
+  const cv = $("lane" + l), [g, w, h] = fit(cv), q = S.seq[S.cur];
+  if (!q) return;
+  const cw = w / 16, ln = l < 4 ? q.lanes[l] : null;
+  g.fillStyle = col("bg");
+  g.fillRect(0, 0, w, h);
+  for (let k = 0; k < 16; k++) {
+    const x0 = k * cw + 1.5, bw = cw - 3, past = ln ? k >= ln.len : k >= q.lanes[0].len;
+    const on = S.sel && S.sel[0] === l && S.sel[1] === k;
+    g.fillStyle = on ? col("raise") : k % 4 ? col("surf") : col("raise");
+    g.fillRect(x0, 3, bw, h - 3);
+    let t, mid = false;
+    if (!ln) t = q.xf[k] / 100;
+    else if (S.draw === "c") t = (100 - ln.miss[k]) / 100;
+    else if (l === 2) { t = (ln.v[k] - 64) / 24; mid = true; }
+    else t = (ln.v[k] - LO[l]) / (HI()[l] - LO[l]);
+    t = Math.max(mid ? -1 : 0, Math.min(1, t));     // (steps past LEN may hold anything)
+    g.globalAlpha = past ? .25 : ln && S.draw === "v" ? .35 + .65 * (100 - ln.miss[k]) / 100 : 1;
+    g.fillStyle = on ? col("accent") : S.draw === "c" && ln ? col("mid") : col("theme");
+    if (mid) { const c = 3 + (h - 3) / 2, d = t * (h - 3) / 2; g.fillRect(x0, Math.min(c, c - d), bw, Math.max(2, Math.abs(d))); }
+    else { const bh = Math.max(2, t * (h - 3)); g.fillRect(x0, h - bh, bw, bh); }
+    g.globalAlpha = 1;
+  }
+  if (ln) {                                       // the loop point: a tick above its step
+    g.fillStyle = col("accent");
+    g.fillRect(ln.loop * cw + 1.5, 0, cw - 3, 2);
+  }
+}
+function laneInput(cv, l) {
+  let down = false;
+  const at = (e) => {
+    const r = cv.getBoundingClientRect();
+    return [Math.max(0, Math.min(15, Math.floor((e.clientX - r.left) / r.width * 16))), 1 - (e.clientY - r.top - 3) / (r.height - 3)];
+  };
+  const put = (k, t) => {
+    const q = S.seq[S.cur];
+    t = Math.max(0, Math.min(1, t));
+    if (l === 4) q.xf[k] = Math.round(t * 100);
+    else if (S.draw === "c") q.lanes[l].miss[k] = 100 - Math.round(t * 20) * 5;
+    else if (l === 2) q.lanes[l].v[k] = Math.round(64 + (t * 2 - 1) * 24);
+    else q.lanes[l].v[k] = Math.round(LO[l] + t * (HI()[l] - LO[l]));
+    S.sel = [l, k];
+    edited(S.cur + 1);
+  };
+  cv.addEventListener("pointerdown", (e) => { if (!S.link) return; down = true; cv.setPointerCapture(e.pointerId); put(...at(e)); });
+  cv.addEventListener("pointermove", (e) => {
+    const [k, t] = at(e);
+    if (down) put(k, t);
+    else if (S.seq[S.cur] && l < 4) { $("readout").textContent = stepText(S.seq[S.cur], l, k); }
+  });
+  cv.addEventListener("pointerup", () => { down = false; });
+  cv.addEventListener("pointercancel", () => { down = false; });
+  cv.addEventListener("wheel", (e) => {           // one step of value (chance: 5 %) at a time
+    if (!S.link) return;
+    e.preventDefault();
+    const [k] = at(e), q = S.seq[S.cur], s = e.deltaY < 0 ? 1 : -1;
+    if (l === 4) q.xf[k] = Math.max(0, Math.min(100, q.xf[k] + 5 * s));
+    else if (S.draw === "c") q.lanes[l].miss[k] = Math.max(0, Math.min(100, q.lanes[l].miss[k] - 5 * s));
+    else q.lanes[l].v[k] = Math.max(LO[l], Math.min(HI()[l], q.lanes[l].v[k] + (l === 0 && q.sync ? 8 * s : s)));
+    S.sel = [l, k];
+    edited(S.cur + 1);
+  }, { passive: false });
+}
+
+function render() {
+  if (!S.link) return;
+  drawPad();
+  for (const k of [0, 1]) { $(k ? "y" : "x").value = S.p[k]; $(k ? "yo" : "xo").value = Math.round(S.p[k] * 100 / 127) + " %"; }
+  if (document.activeElement !== $("path")) $("path").value = S.p[2];
+  for (let c = 0; c < 4; c++) { const s = $("wav" + c); if (s && document.activeElement !== s) s.value = S.p[4 + c]; }
+  drawPoints();
+  [...$("tabs").children].forEach((b, i) => b.setAttribute("aria-selected", i === S.cur));
+  $("dv").setAttribute("aria-pressed", S.draw === "v");
+  $("dc").setAttribute("aria-pressed", S.draw === "c");
+  const q = S.seq[S.cur];
+  if (!q) return;
+  $("mode").value = q.mode;
+  $("sync").checked = !!q.sync;
+  const used = [0, 1, 2, 3].filter((c) => S.p[4 + c] === S.nwaves + S.nbseq + S.cur).map((c) => "ABCD"[c]);
+  $("usedby").textContent = used.length ? `Played by corner ${used.join(", ")}` : `No corner plays SEQ${S.cur + 1}: set a WAV to it`;
+  for (let l = 0; l < 4; l++) {
+    const len = $("LEN" + l), lp = $("LOOP" + l);
+    if (document.activeElement !== len) len.value = q.lanes[l].len;
+    if (document.activeElement !== lp) { lp.value = q.lanes[l].loop + 1; lp.max = q.lanes[l].len; }
+  }
+  for (let l = 0; l <= 4; l++) drawLane(l);
+  if (S.sel) $("readout").textContent = S.sel[0] < 4 ? stepText(q, S.sel[0], S.sel[1]) : `SEQ${S.cur + 1} · step ${S.sel[1] + 1}: crossfade ${q.xf[S.sel[1]]} %`;
+}
+window.addEventListener("resize", render);
+
+// the emulator, when this page was opened from it: connect at once
+if (new URLSearchParams(location.search).has("emu")) connect("emu");
+</script>
+</body>
+</html>

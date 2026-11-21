@@ -10,8 +10,6 @@
  * the timer: ui.c help_on, help_start (PREF_HELP, ui.help_t) */
 
 static const char H_EDIT[] = "[K1-4]SOUND[EDIT]HOLD: ENGINES";
-static const char H_LANES[] = "[K1-4]LANE LEVELS[EDIT]HOLD: MUTES";
-static const char H_FMOP[] = "[K1]OPERATOR[SAVE]HOLD: UNDO";
 static const struct { const char *title, *hint; } HELP_PAGE[] = {
     {"ENV", "[K1-4]A D S R[ENV]ENV DEST"},
     {"ENV DEST", "[K1-4]ENV AMOUNTS[ENV]ENV"},
@@ -30,28 +28,25 @@ static const struct { const char *title, *hint; } HELP_PAGE[] = {
     {"EDIT 1", H_EDIT},
     {"EDIT 2", H_EDIT},
     {"FILTER", "[K1]LP BP HP[K2]CUTOFF[EDIT]VOICE"},
-    {"LANES", H_LANES},
-    {"LANES 2", H_LANES},
-    {"OPERATOR", H_FMOP},
-    {"OP ENV", H_FMOP},
-    {"OPERATOR 2", H_FMOP},
     {"VOICE", "[K1]POLY, MONO[K2]GLIDE"},
     {"VOICE 2", "[K2]DETUNE[K3]PAN[K4]MUTE"},
     {"VOICE 3", "[K1]SPREAD[K2]AFTERTOUCH F3-C5"},
-    {"SONG", "[K1]SECTION[KEYS]A-D[PLAY]SONG"},
     {"USER", "[K1]SLOT[OCT+]SAVE[SAVE]PRESETS"},
     {"PRESETS", "[K2]ENGINE[K3]FAV[K4]LIST"},
-    {"PHRASES", "[K1]PHRASE[OCT+]LOAD[SAVE]PROJECT"},
-    {"PROJECT", "[K2]ERASE[K3]LOAD[K4]SAVE"},   /* (1.5.5, #199: ERASE; 1.8: LOAD) */
+    {"PHRASES", "[K1]PHRASE[OCT+]LOAD[SAVE]TOOLS"},
     {"TOOLS", "[K1]CLEAR[K2]INIT, CLEAN[OCT+]DO"},   /* (1.5.5, #190: KNOB 2 on, CLEAN INIT) */
     {"ARP", "[K1]MODE[KEYS]CHORD[ARP]ARP 2"},
     {"ARP 2", "[K3]HOLD[K4]ORDER[ARP]ARP"},   /* (1.8: as its card) */
     {"STEP", "[REC]WRITE[K1]STEP[SEQ]PATTERN"},   /* (1.8: the keys write once armed) */
     {"AUTOMATION", "[K1]ROW[OCT+]DO[EDIT]DELETE"},
-    {"MIXER", "[K4]MUTE[ALGO]TRACK[HOME]CLOCK"},
     {"CLOCK", "[SELECT]TEMPO[GLO]HOLD: TAP"},
 };
-#define H_HOME "[PRESETS]SOUND[HOME]HOLD: MENU"
+/* WaveStorm's EDIT > PATH .. SEQ SET (ui_wsedit.c), by page: EDIT > STEP has SEQ > STEP's title */
+static const char *const HELP_WS[GR_WSSSET - GR_WSPATH + 1] = {
+    "[K1]POINT[K2]X[SAVE]HOLD: UNDO", "[K1]POINTS[K2]LOOP[K3]FROM", "[K1]SEQ[K2]LANE[SAVE]HOLD: UNDO",
+    "[K2]VALUE[K3]PROB[SAVE]HOLD: UNDO", "[K1]MODE[K3]FROM[SAVE]HOLD: UNDO",
+};
+#define H_HOME "[PRESETS]SOUND[HOME]HOLD: MENU"   /* (ALGORITHM, X: the top bar says so as it turns) */
 /* a layer's (LAYER_*): what its footer row (LAYERS[].foot) does not say */
 static const char *const HELP_LAYER[LAYER_N] = {
     "", "[KEYS]BLACK: MUTES[FX]2 TAPS: LOCK", "[KEYS]SOLO MUTE FILL TAP[K1-4]LEVELS", "[KEYS]ROOT[K1-4]ROOT SCL CHORD",
@@ -65,6 +60,8 @@ static const char *help_page(void)
     const char *t;
     if (ui.home)
         return H_HOME;
+    if (cur_page()->graph >= GR_WSPATH && cur_page()->graph <= GR_WSSSET)
+        return HELP_WS[cur_page()->graph - GR_WSPATH];
     t = cur_page()->title;
     if (sel_mode() != SEL_BPM && str_eq(t, "CLOCK"))   /* (1.5.5: SELECT steps the pages; 1.5.6: or plays) */
         return "[K1]TEMPO[GLO]HOLD: TAP";

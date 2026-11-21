@@ -10,9 +10,9 @@
  *                                     wave; PITCH: semitones; LEVEL), its chance, and (TIME) the crossfade into it
  *   SEQ SET   MODE SYNC FROM          LOOP / PING-PONG / ONE-SHOT, SYNC to the tempo, FROM: a built-in sequence copied in
  * Editing the path puts PATH on USER (what is edited is what plays); a corner plays a SEQ when its WAV is set to it.
- * The values are written as the knobs turn, in the main loop; the audio reads them as they are (every index is bounded
- * there); a copy (FROM) is made with the audio IRQ off. The ui_graph.c pictures: graph_wspath, graph_wslanes; the
- * cards: ui_draw.c wse_columns. Included by ui.c */
+ * A knob's detent edits a copy of the sound's path and sequences; when that changed anything, the undo copy is taken
+ * (ui.c UNDO_WS: SAVE held puts it back; one copy for one knob's turn) and the copy goes in with the audio IRQ off.
+ * The ui_graph.c pictures: graph_wspath, graph_wslanes; the cards: ui_draw.c wse_columns. Included by ui.c */
 static struct {
     uint8_t seq, lane, step, point;  /* SEQ1..4 (0..3), the lane (WL_*), its step, the path's point */
     uint8_t from_p, from_s;          /* FROM's last pick: a built-in path 1.. (not OFF) / sequence + 1; 0: none yet */
@@ -87,18 +87,49 @@ static void wse_step_value(const ws_lseq_t *q, uint32_t l, uint32_t k, char *b, 
 }
 
 static int32_t wse_turn(int32_t v, int32_t s, int32_t lo, int32_t hi) { return clamp(v + s, lo, hi); }
-/* a knob on one of the pages: slot 0..3, s detents */
-static void wse_knob(uint32_t g, uint32_t slot, int32_t s)
+static const uint8_t WSE_LO[WL_N] = {0, 0, 40, 0}, WSE_HI[WL_N] = {127, WS_NWAVES - 1, 88, 127};   /* a lane's values */
+/* a path, a sequence inside what these pages can set (the editor's WS_SET, editor_ws.c) */
+static void wse_path_fix(ws_upath_t *pa)
 {
-    track_t *t = TSEL;
-    ws_upath_t *pa = wse_path();
-    ws_lseq_t *q = wse_seq();
-    ws_lane_t *l = wse_lane();
-    wse_fix();
+    uint32_t i;
+    pa->n = (uint8_t)clamp(pa->n, 1, WS_UPTS);
+    if (pa->loop != 0xFFu && pa->loop >= pa->n)
+        pa->loop = (uint8_t)(pa->n - 1u);
+    for (i = 0; i < WS_UPTS; i++) {
+        pa->pt[i].x = (int16_t)clamp(pa->pt[i].x, -16384, 16384);
+        pa->pt[i].y = (int16_t)clamp(pa->pt[i].y, -16384, 16384);
+        pa->pt[i].ms = (uint16_t)clamp(pa->pt[i].ms, WS_TIME_MS[0], WS_TIME_MS[127]);
+    }
+}
+static void wse_seq_fix(ws_lseq_t *q)
+{
+    uint32_t l, k;
+    if (q->mode > WS_PINGPONG)
+        q->mode = WS_LOOP;
+    q->sync = q->sync != 0u;
+    for (l = 0; l < WL_N; l++) {
+        ws_lane_t *ln = &q->lane[l];
+        ln->len = (uint8_t)clamp(ln->len, 1, WS_LSTEPS);
+        if (ln->loop >= ln->len)
+            ln->loop = (uint8_t)(ln->len - 1u);
+        for (k = 0; k < WS_LSTEPS; k++) {
+            ln->v[k] = (uint8_t)clamp(ln->v[k], WSE_LO[l], WSE_HI[l]);
+            ln->miss[k] = (uint8_t)clamp(ln->miss[k], 0, 100);
+        }
+    }
+    for (k = 0; k < WS_LSTEPS; k++)
+        q->xf[k] = (uint8_t)clamp(q->xf[k], 0, 100);
+}
+/* a knob on one of the pages: slot 0..3, s detents, on snd (a copy of the part's) and *path (its PATH) */
+static void wse_edit(ws_sound_t *snd, int16_t *path, uint32_t g, uint32_t slot, int32_t s)
+{
+    ws_upath_t *pa = &snd->path;
+    ws_lseq_t *q = &snd->seq[wse.seq % WS_NUSEQ];
+    ws_lane_t *l = &q->lane[wse.lane % WL_N];
     if (g == GR_WSPATH || g == GR_WSPSET) {
         ws_pt_t *pt = &pa->pt[wse.point % WS_UPTS];
         if (!(g == GR_WSPATH && slot == 0u))         /* (an edit: the path that plays is the one edited) */
-            t->p[P_E2] = WS_UPATH;
+            *path = WS_UPATH;
         if (g == GR_WSPATH) {
             if (slot == 0u)
                 wse.point = (uint8_t)wse_turn(wse.point, s, 0, (int32_t)wse_npts() - 1);
@@ -123,9 +154,7 @@ static void wse_knob(uint32_t g, uint32_t slot, int32_t s)
             pa->loop = lp < 0 ? 0xFFu : (uint8_t)lp;
         } else if (slot == 2u) {                     /* FROM: a built-in path (not OFF), copied in */
             wse.from_p = (uint8_t)(wse.from_p ? wse_turn(wse.from_p, s, 1, WS_NBPATH - 1) : s > 0 ? 1 : WS_NBPATH - 1);
-            fm1_irq_off();
             ws_path_copy(pa, wse.from_p);
-            fm1_irq_on();
         }
     } else if (g == GR_WSSEQ) {
         if (slot == 0u)
@@ -150,9 +179,8 @@ static void wse_knob(uint32_t g, uint32_t slot, int32_t s)
         if (slot == 0u)
             wse.step = (uint8_t)wse_turn(wse.step, s, 0, (int32_t)wse_len(l) - 1);
         else if (slot == 1u) {
-            static const uint8_t LO[WL_N] = {0, 0, 40, 0}, HI[WL_N] = {127, WS_NWAVES - 1, 88, 127};
             int32_t d = wse.lane == WL_TIME && q->sync ? s * 8 : s;   /* (SYNC: one note value a detent) */
-            l->v[k] = (uint8_t)wse_turn(l->v[k], d, LO[wse.lane % WL_N], HI[wse.lane % WL_N]);
+            l->v[k] = (uint8_t)wse_turn(l->v[k], d, WSE_LO[wse.lane % WL_N], WSE_HI[wse.lane % WL_N]);
         } else if (slot == 2u)
             l->miss[k] = (uint8_t)(100 - wse_turn(100 - l->miss[k], s * 5, 0, 100));
         else if (wse.lane == WL_TIME)
@@ -165,11 +193,27 @@ static void wse_knob(uint32_t g, uint32_t slot, int32_t s)
             q->sync = (uint8_t)wse_turn(q->sync, s, 0, 1);
         else if (slot == 2u) {                       /* FROM: a built-in sequence, copied in */
             wse.from_s = (uint8_t)(wse.from_s ? wse_turn(wse.from_s, s, 1, WS_NBSEQ) : s > 0 ? 1 : WS_NBSEQ);
-            fm1_irq_off();
             ws_seq_copy(q, wse.from_s - 1u);
-            fm1_irq_on();
-            wse_fix();
         }
+    }
+}
+static void wse_knob(uint32_t g, uint32_t slot, int32_t s)
+{
+    track_t *t = TSEL;
+    ws_sound_t snd;
+    int16_t path = t->p[P_E2];
+    wse_fix();
+    snd = *ws_sound(t);
+    wse_edit(&snd, &path, g, slot, s);
+    if (memcmp(&snd, ws_sound(t), sizeof snd) || path != t->p[P_E2]) {
+        /* the same knob on the same place (page, knob, sequence, lane, step or point): one undo for the turn */
+        edit_undo_take(t, 0x100000u | (g & 0xFFu) << 12 | slot << 10 | (wse.seq & 3u) << 8 | (wse.lane & 3u) << 6 |
+                              ((g == GR_WSPATH ? wse.point : wse.step) & 63u), UNDO_WS);
+        fm1_irq_off();                               /* (the audio must not see half a sequence) */
+        *ws_sound(t) = snd;
+        t->p[P_E2] = path;
+        fm1_irq_on();
+        motion_undo_done(t);
     }
     wse_fix();
     ui.force = 1;

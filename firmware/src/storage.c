@@ -18,15 +18,15 @@
 #define ST_PAYLOAD_MAX (ST_SECTOR - ST_PAYLOAD_OFF)
 
 /* flash map (WaveStorm): settings 0xFC000 (A) / 0xFD000 (B); the user preset banks 0xDC000..0xDFFFF (upreset.c); their
- * paths and sequences (ws_sound.c, OBJ_WSSND0..) 0xA0000..0xAFFFF, in the sectors of Felucca's user sample slots
+ * paths, sequences and steps (ws_sound.c, OBJ_WSSND0..) 0xA0000..0xBFFFF, in the sectors of Felucca's user sample slots
  * (0xA0000..0xDBFFF, otherwise unused now); the autosave (ws_store.c) A 0xE5000, B 0xE6000, above the OTA staging
  * (0xE0000..0xE4FFF), in the margin the stock firmware's own update stages into (only ever while the stock firmware runs:
  * a later build finds no valid copy and starts as without one). Felucca's objects keep their ids and sectors, unused by
  * WaveStorm: its projects (OBJ_PROJECT0.., 0x97000..0x9EFFF) and its FM6 patches (OBJ_FM6BANK, OBJ_UPFM6: 0x9F000 /
  * 0xFE000); a unit that ran Felucca keeps them as they were. */
 enum { OBJ_SETTINGS, OBJ_PROJECT0, OBJ_UPRESET0 = OBJ_PROJECT0 + 4, OBJ_FM6BANK = OBJ_UPRESET0 + 2, OBJ_UPFM6,
-       OBJ_AUTOSAVE, OBJ_WSSND0, OBJ_COUNT = OBJ_WSSND0 + 8 };   /* WaveStorm: the user presets' paths and sequences
-                                                                   * (ws_sound.c), 0xA0000.. (Felucca's sample slots) */
+       OBJ_AUTOSAVE, OBJ_WSSND0, OBJ_COUNT = OBJ_WSSND0 + 16 };   /* WaveStorm: the user presets' paths, sequences and
+                                                                    * steps (ws_sound.c), 0xA0000.. (Felucca's sample slots) */
 
 typedef struct {
     uint32_t magic;

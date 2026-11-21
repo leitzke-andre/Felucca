@@ -64,6 +64,7 @@ if (typeof registerProcessor === "function") {
       this.busy = 0;
       this.frames = 0;
       this.queue = [];                                // button / key changes, each held >= HOLD_MS of device time
+      this.sysex = [];                                // the editor's requests (index.html relays them), one at a time
       this.nextOk = 0;
       this.port.onmessage = (e) => this.onMessage(e.data);
     }
@@ -93,6 +94,26 @@ if (typeof registerProcessor === "function") {
       else if (m.type === "master") ex.web_master(m.value | 0);
       else if (m.type === "midi") ex.web_midi(m.data[0] | 0, m.data[1] | 0, m.data[2] | 0);
       else if (m.type === "visible") this.period = m.on ? 1 / 30 : 1 / 4;
+      else if (m.type === "sysex" && ex.web_sysex) { this.sysex.push(Uint8Array.from(m.data)); this.sysexIn(); }
+    }
+
+    // the editor protocol (felucca_web.c web_sysex): a request in once the last one was taken; what came out to the page
+    sysexIn() {
+      const ex = this.ex;
+      while (this.sysex.length) {
+        const f = this.sysex[0];
+        if (f.length <= 640) {
+          new Uint8Array(ex.memory.buffer, ex.web_sysex_buf(), f.length).set(f);
+          if (ex.web_sysex(f.length) === 2) return;   // (the one before still waits: next quantum)
+        }
+        this.sysex.shift();
+      }
+    }
+    sysexOut() {
+      const ex = this.ex, n = ex.web_sysex_out_n();
+      if (!n) return;
+      this.port.postMessage({ type: "sysex", data: new Uint8Array(ex.memory.buffer, ex.web_sysex_out(), n).slice() });
+      ex.web_sysex_out_clear();
     }
 
     publish() {
@@ -146,7 +167,9 @@ if (typeof registerProcessor === "function") {
       if (this.queue.length) this.input();
       const out = outputs[0], n = out[0].length;
       const t0 = clock();
+      if (this.sysex.length) this.sysexIn();
       ex.web_render(n);
+      if (ex.web_sysex_out_n) this.sysexOut();
       this.busy += clock() - t0;
       this.frames += n;
       out[0].set(new Float32Array(ex.memory.buffer, ex.web_out_l(), n));

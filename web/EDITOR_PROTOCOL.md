@@ -1,12 +1,16 @@
 # Felucca editor protocol (SysEx over USB-MIDI)
 
 > **WaveStorm:** this is Felucca's protocol document, kept for reference. WaveStorm answers the same frames with these
-> differences (see `WAVESTORM.md` and `firmware/src/editor.c`): one track (part); a step is 8 bytes (notes, time,
-> flags, velocity), and a longer Felucca step is taken with its extra bytes ignored; PROJECT (9), SONG (33), the
-> sample commands (11..15) and the backups (65..67) get no reply; the INFO tags for ratchet, nudge, condition and song
-> lanes are not sent; the MENU ids 26..30 (T1..T4 CHANNEL, AUTO SELECT) are gone and MIDI IN (21) is a channel
-> 0..15 or 16 OMNI. The tests and the web editor (`web/editor.html`, `fm1backup.js`) named below are Felucca's and
-> are not in this tree: WaveStorm has no web editor yet.
+> differences (see `WAVESTORM.md` and `firmware/src/editor.c`): INFO's name is `WAVESTORM <version>`; one track
+> (part); a step is 8 bytes (notes, time, flags, velocity), and a longer Felucca step is taken with its extra bytes
+> ignored; PROJECT (9), SONG (33), the sample commands (11..15) and the backups (65..67) get no reply; the INFO tags
+> for ratchet, nudge, condition and song lanes are not sent; the MENU ids 26..30 (T1..T4 CHANNEL, AUTO SELECT) are
+> gone and MIDI IN (21) is a channel 0..15 or 16 OMNI; the USB port is named "WaveStorm FM-1". A user preset
+> (`UP_*`) keeps its 16-step pattern as below, and the device keeps all 64 steps and the sound's own path and
+> sequences beside it: `UP_PUT` into a slot drops those (the slot then loads the sound's factory path and sequences
+> and the 16 steps). WaveStorm adds commands 84..86 for the path and the sequences: see "WaveStorm: the path and the
+> sequences" at the end. The tests and the web editor (`web/editor.html`, `fm1backup.js`) named below are Felucca's
+> and are not in this tree; WaveStorm's editor is `web/wavestorm-editor.html`.
 
 The firmware side is `firmware/src/editor.c`. Commands 1-15, track selection, dumps, step reads
 and parameter writes (27, 29, 30, 31) were checked on hardware. `tests/editor_test.c` also exercises the real C
@@ -1256,3 +1260,32 @@ device gone at ~0.3 s, the MIDI port gone at ~0.57 s and back at ~1.15 s; ON -> 
 at ~0.6 s while the MIDI port was not seen to disappear at all (so do not wait for a disconnect event: after
 a real change, wait ~1.5 s and open again). What the editor sends in that window is lost, `WATCH` ends with the
 bus reset (send `INFO` and `WATCH` again after reconnecting), and a backup in progress answers rc 5 (stale).
+
+## WaveStorm: the path and the sequences (84-86)
+
+The selected part's own vector path (PATH USER) and its four wave sequences (SEQ1..SEQ4), one part of them a frame
+(`firmware/src/editor_ws.c`; the editor: `web/wavestorm-editor.html`). INFO advertises them with the tag
+`58 01 nuseq upts nlanes lsteps nwaves nbseq upath` (today `58 01 04 08 04 10 30 0A 0A`): the number of sequences,
+of path points, of lanes, of steps a lane; of waves (a `WAV A..D` value below it is a wave, from `nwaves + nbseq` one of
+SEQ1..), of built-in sequences, and PATH's value for USER.
+
+| cmd | request | reply |
+| --- | --- | --- |
+| 84 `WS_GET` | part | part, 0, its data |
+| 85 `WS_SET` | part, its data | part, rc (0 ok, 1 a bad part or length: nothing changed), its data as kept |
+| 86 `WS_CHANGED` | — (pushed while `WATCH`ed) | part: it changed on the device; read it again |
+
+- **part 0, the path** (66 bytes): n (1..8), loop (127 = none, a one-shot; else the point it goes back to after the
+  last), then 8 × (x, y, ms): x and y three bytes each, the value + 16384 (0..32768, -100 % .. +100 % around the X / Y
+  knobs), 7 bits a byte, LSB first; ms a v14 (5 .. 7680). The points past n are kept and sent.
+- **parts 1..4, SEQ1..SEQ4** (154 bytes): mode (0 ONE-SHOT, 1 LOOP, 2 PING-PONG), sync (0 / 1), then each lane TIME,
+  WAVE, PITCH, LEVEL: len (1..16), loop (0..len−1), 16 values, 16 misses (100 − the step's chance, in %); then 16
+  crossfades (%, the TIME lane's). Values: TIME 0..127 (5 ms × 2^(v/12), or with sync a note value, v >> 3: 1/64 ..
+  2 bars), WAVE 0..nwaves−1, PITCH 40..88 (64 = 0 semitones), LEVEL 0..127.
+- **parts 5 and 6 (`WS_GET` only):** the names: count, then each (0-terminated): 5 the sources (`WAV A..D`; a WAVE
+  lane's values are the first nwaves), 6 the paths (PATH's values).
+
+A set keeps what the device's EDIT > PATH .. SEQ SET pages can set (values clamped into those ranges) and replies with
+it. It takes the device's undo copy as those pages do: sets of one part in a row (less than 1.5 s apart) are one undo,
+and SAVE held on the device puts them back (a `RELOAD` push follows). A set of the path puts PATH on USER, as editing
+it on the device does (a `CHANGED` push of PATH follows). The editor's own sets are not echoed with `WS_CHANGED`.

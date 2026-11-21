@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* Editor protocol (Felucca's; WaveStorm has no web editor yet): SysEx (web/EDITOR_PROTOCOL.md; v2 = user presets + live
- * sync, v3 = tracks: the v1 / v2 commands act on the selected track, cmds 27-30 reach any track (WaveStorm: one);
- * v4 = TRACK_PARAM (31) and the TRACK_CHANGED push (32), enabled by WATCH bit 1).
+/* Editor protocol (Felucca's, and WaveStorm's own path and sequence commands 84-86: editor_ws.c,
+ * web/wavestorm-editor.html): SysEx (web/EDITOR_PROTOCOL.md; v2 = user presets + live sync, v3 = tracks: the v1 / v2
+ * commands act on the selected track, cmds 27-30 reach any track (WaveStorm: one); v4 = TRACK_PARAM (31) and the
+ * TRACK_CHANGED push (32), enabled by WATCH bit 1).
  *   F0 7D 46 4C cmd args.. F7     (7D = non-commercial ID, "FL")
  * Values are 14 bit, two 7-bit bytes LSB first, offset by 8192 (so -8192..8191).
  * Every request gets a reply with the same cmd; 23/24/26 are also pushed
@@ -19,6 +20,11 @@ enum { ED_INFO = 1, ED_GET, ED_SET, ED_DUMP, ED_DESC, ED_STEP_GET, ED_STEP_SET, 
        ED_TRACK_PARAM, ED_TRACK_CHANGED, ED_SONG,
        ED_UI_STATE, ED_UI_SET, ED_UI_PALETTES, ED_FAV_GET, ED_FAV_SET,
        ED_MOTION = 64, ED_BACKUP_LIST, ED_BACKUP_GET, ED_BACKUP_PUT };
+enum { ED_WS_GET = 84, ED_WS_SET, ED_WS_CHANGED };                         /* WaveStorm (editor_ws.c) */
+#define ED_WS_PARTS (1u + WS_NUSEQ)                                         /* PATH USER, SEQ1..SEQ4 */
+#ifndef ED_LINK_UP                                       /* a host is there (the browser demo: its page, web/emu) */
+#define ED_LINK_UP() (usb.config && usb.resets == ed_w.resets)
+#endif
 /* WaveStorm answers no PROJECT, SONG, SMP_* (but SMP_BEGIN on: the large frames) or BACKUP_*: the numbers stay
  * Felucca's, so an editor that sends them gets no reply */
 
@@ -82,6 +88,8 @@ static struct {
     int16_t tv[ED_NT];                                   /* v4: trk[k].p[ED_TIDS[j]] at k * 3 + j */
     uint16_t tt[ED_NT];
     uint32_t tpos;
+    uint32_t ws[ED_WS_PARTS];                            /* WaveStorm: the path's and the sequences' signatures */
+    uint16_t wst[ED_WS_PARTS];                           /* .. ms of the last WS_CHANGED */
 } ed_w;
 
 static int16_t *ed_val(uint32_t i) { return i < P_COUNT ? &TSEL->p[i] : &song.g[i - P_COUNT]; }
@@ -91,9 +99,17 @@ static uint32_t ed_step_sig(const step_t *s)
            ((uint32_t)s->n << 28) ^ ((uint32_t)s->time * 0x9E3779B1u) ^ ((uint32_t)s->flags * 0x85EBCA6Bu) ^
            ((uint32_t)s->vel * 0xC2B2AE35u);
 }
+static uint32_t ed_ws_sig(uint32_t part)                /* the selected part's path (0) or SEQn (1..4) */
+{
+    const ws_sound_t *s = ws_sound(TSEL);
+    return part ? fnv(2166136261u, &s->seq[(part - 1u) % WS_NUSEQ], sizeof s->seq[0])
+                : fnv(2166136261u, &s->path, sizeof s->path);
+}
 static void ed_shadow(void)                              /* the editor is in sync */
 {
     uint32_t i;
+    for (i = 0; i < ED_WS_PARTS; i++)
+        ed_w.ws[i] = ed_ws_sig(i);
     for (i = 0; i < ED_NV; i++)
         ed_w.v[i] = *ed_val(i);
     for (i = 0; i < NSTEP; i++)
@@ -128,7 +144,10 @@ static void ed_load_after(const ed_load_t *b)
         if (TSEL->p[i] != b->p[i])
             ed_w.v[i] = TSEL->p[i];
 }
-static int ed_room(void) { return so_w - so_r + 8u <= SXQ / 2u; }
+#ifndef ED_ROOM                                         /* (the browser demo: its page's buffer, web/emu) */
+#define ED_ROOM() (so_w - so_r + 8u <= SXQ / 2u)
+#endif
+static int ed_room(void) { return ED_ROOM(); }
 static void ed_known(uint32_t k, uint32_t id)            /* the editor's own change of trk[k].p[id]: no push */
 {
     uint32_t j;
@@ -147,7 +166,7 @@ static void ed_sync(void)                                /* main loop */
     if (!ed_w.on || now - ed_w.run_ms < 5u)
         return;
     ed_w.run_ms = now;
-    if (!usb.config || usb.resets != ed_w.resets || now - ed_w.last_ms > 3000u) {
+    if (!ED_LINK_UP() || now - ed_w.last_ms > 3000u) {
         ed_w.on = 0;                                     /* no host, USB reset, or 3 s without a request */
         return;
     }
@@ -172,6 +191,19 @@ static void ed_sync(void)                                /* main loop */
         ed_begin(ED_STEP_CHANGED);
         ed_b(i);
         ed_b(song.sel);
+        ed_send();
+        n++;
+    }
+    for (i = 0; i < ED_WS_PARTS && n < ED_PUSH_MAX; i++) {   /* WaveStorm: a path or sequence edited on the device */
+        uint32_t h = ed_ws_sig(i);
+        if (h == ed_w.ws[i] || (uint16_t)(now - ed_w.wst[i]) < 30u)
+            continue;                                    /* (coalesced: the editor reads the latest) */
+        if (!ed_room())
+            return;
+        ed_w.ws[i] = h;
+        ed_w.wst[i] = (uint16_t)now;
+        ed_begin(ED_WS_CHANGED);
+        ed_b(i);
         ed_send();
         n++;
     }
@@ -270,6 +302,7 @@ static int ed_flash_stop(void)
 #include "editor_menu.c"
 #include "editor_learn.c"                    /* 1.5: MIDI LEARN's map (cmds 78, 79) */
 #include "editor_palette.c"                  /* 1.6: CUSTOM, the user's palette (cmds 80, 81) */
+#include "editor_ws.c"                       /* WaveStorm: the part's own path and sequences (cmds 84-86) */
 
 /* MOTION's reply: the records of track k as (step, id, v14), a lock's id without its MOTION_LOCK bit (a 7-bit SysEx
  * byte); kinds (1.1: the ops 5..7): then one byte per record, in the same order, 0 automation, 1 lock. The query and
@@ -349,6 +382,7 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
     if (ed_menu_handle(cmd, a, na)) { ed_send(); return; }
     if (ed_learn_handle(cmd, a, na)) { ed_send(); return; }
     if (ed_palette_handle(cmd, a, na)) { ed_send(); return; }
+    if (ed_ws_handle(cmd, a, na)) { ed_send(); return; }
     switch (cmd) {
     case ED_MOTION: {
         track_t *t = &trk[a[0]]; uint32_t rc = 0;
@@ -369,7 +403,7 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         break;
     }
     case ED_INFO:
-        ed_str("FELUCCA " FELUCCA_VERSION, 24);
+        ed_str("WAVESTORM " FELUCCA_VERSION, 24);
         ed_b(NENGINES);
         ed_b(P_COUNT);
         ed_b(G_COUNT);
@@ -387,6 +421,8 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         ed_b(0x41); ed_b(1); ed_b(MOTION_MAX); ed_b(MOTION_MAX >> 7);   /* 1.2: 128 motion records, MOTION op 8 */
         ed_b(0x43); ed_b(1); ed_b(ML_N);   /* 1.5: MIDI LEARN's map (cmds 78, 79; editor_learn.c) */
         ed_b(0x45); ed_b(1); ed_b(ED_PAL_N);   /* 1.6: CUSTOM, the user's palette: 5 colours (cmds 80, 81; editor_palette.c) */
+        ed_b(0x58); ed_b(1); ed_b(WS_NUSEQ); ed_b(WS_UPTS); ed_b(WL_N); ed_b(WS_LSTEPS);   /* WaveStorm: cmds 84-86 */
+        ed_b(WS_NWAVES); ed_b(WS_NBSEQ); ed_b(WS_UPATH);   /* (editor_ws.c): the sources' and the paths' layout */
         break;
     case ED_GET:
     case ED_SET:
@@ -547,8 +583,10 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
             int16_t v[P_COUNT];
             up_values(&r, v);                              /* each value inside its range */
             for (i = 0; i < P_COUNT; i++)
-                up_set_value(&r, i, v[i]);                 /* the record's own form (v4: a byte each) */
+                up_set_value(&r, i, v[i]);                 /* the record's own form (a byte each) */
             rc = up_put(slot, &r) ? 2u : 0u;
+            if (!rc)
+                ws_snd_forget(slot);                       /* (WaveStorm: the sound's factory path and sequences) */
         }
         ed_b(a[0]);
         ed_b(rc);

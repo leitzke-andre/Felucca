@@ -7,8 +7,10 @@
 
 Outputs in build/: felucca.bin (app), loader/ota.bin (update loader),
 wavestorm.fwsc (package). A release build (--release X.Y) writes wavestorm-X.Y.fwsc and a folder
-release-X.Y/ with the package, the app, SHA256SUMS and the licence files. The package identity stays Felucca's
-(FM-1_9XY): the installers and the update entry recognise the device by it.
+release-X.Y/ with the package, the app, SHA256SUMS and the licence files. The package identity is FM-1_8XY
+(the stock firmware is FM-1_0XY, Felucca FM-1_9XY): the installers take any FM-1_ package and check, after the
+install, that the device reports it. The USB device is named "WaveStorm FM-1" (FELUCCA_USB_PRODUCT overrides it; the
+installers look for "FM-1" in a port's name).
 See BUILDING.md for the toolchain and the SDK.
 
 The JieLi toolchain is Linux x86-64 only. JIELI_TOOLCHAIN points at it; on
@@ -50,7 +52,7 @@ SDK_SHA256 = {
     "cfg/eq_cfg_hw.bin": "41167491bffed4651750719c973d2758adeb9021a5670d02d6a53c85ed80ea7d",
 }
 
-PRODUCT = "FM-1_900"                # package identity; release builds are FM-1_9XY
+PRODUCT = "FM-1_800"                # package identity; release builds are FM-1_8XY
 VERSION = None                      # FELUCCA_VERSION for release builds (default: firmware/src/felucca.c)
 # FELUCCA_CPU2 (firmware/src/felucca.c), unset or 1, the default (1.6.1): the second core is built in, its entry and
 # stacks (firmware/bsp/chip/fm1_cpu1.S) linked and its waiting loop (.c1_text) checked; MENU > SYSTEM > 2ND CORE starts it
@@ -211,6 +213,10 @@ def build_app():
     if v in ("0", "1", "2", "3"):
         flags.append(f"-DFELUCCA_USB_LAYOUT={v}")
     flags.append(f'-DFELUCCA_ID="{PRODUCT}"')
+    usb = os.environ.get("FELUCCA_USB_PRODUCT", "WaveStorm FM-1")   # (string descriptor 2: ASCII, at most 31)
+    if not re.fullmatch(r"[ -~]{1,31}", usb) or '"' in usb or "\\" in usb:
+        raise SystemExit(f"FELUCCA_USB_PRODUCT {usb!r}: 1..31 printable ASCII characters, no quotes")
+    flags.append(f'-DFELUCCA_USB_PRODUCT="{usb}"')
     if VERSION:
         flags.append(f'-DFELUCCA_VERSION="{VERSION}"')
     # felucca.c goes to LLVM IR without the optimizer, the main-loop functions (UI, stores, editor) are
@@ -385,7 +391,7 @@ def mmio_check():
 def main():
     global PRODUCT, VERSION
     ap = argparse.ArgumentParser()
-    ap.add_argument("--release", metavar="X.Y", help="release build: identity FM-1_9XY, version string vX.Y")
+    ap.add_argument("--release", metavar="X.Y", help="release build: identity FM-1_8XY, version string vX.Y")
     ap.add_argument("--sdk", type=Path, help="JieLi AC79 SDK checkout (default: $AC79_SDK)")
     a = ap.parse_args()
     name = "wavestorm.fwsc"
@@ -393,7 +399,7 @@ def main():
         m = re.fullmatch(r"(\d)\.(\d)(?:\.\d){0,2}(-[A-Za-z0-9]+)?", a.release)
         if not m:
             raise SystemExit(f"--release {a.release}: use X.Y, X.Y.Z, X.Y.Z.W or X.Y-suffix, one digit each")
-        PRODUCT = "FM-1_9" + m[1] + m[2]
+        PRODUCT = "FM-1_8" + m[1] + m[2]
         VERSION = "v" + a.release.lower()      # e.g. v1.0, v1.1-rc1
         name = f"wavestorm-{a.release}.fwsc"
     if not (FW / "engines" / "src" / "felucca_engine.h").exists():
