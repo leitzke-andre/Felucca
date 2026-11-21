@@ -23,7 +23,7 @@
 #include "fe_tables.h"
 #endif
 #include "../firmware/engines/src/felucca_engine.h"
-enum { P_ATK, P_REL, P_FTYPE, P_E0, P_E1, P_E2, P_E3, P_E4, P_E5, P_E6, P_E7, P_COUNT };
+enum { P_ATK, P_REL, P_FTYPE, P_CUT, P_RES, P_FKEY, P_E0, P_E1, P_E2, P_E3, P_E4, P_E5, P_E6, P_E7, P_COUNT };
 typedef struct track {
     int16_t p[P_COUNT];
     voice_t v[NVOICE];
@@ -141,6 +141,7 @@ static void render_preset(const preset_t *pr, uint32_t idx, const char *dir)
     memset(t, 0, sizeof *t);
     for (k = 0; k < 8u; k++)
         t->p[P_E0 + k] = pr->e[k];
+    ws_preset_filter(t->p, idx);                    /* (its filter, as ui.c apply_preset_to sets it) */
     for (b = 0; b < NBLK; b++) {
         int32_t sh = 0, cut = 0;
         if (b == 0) voice_on(t, &t->v[0], 48);
@@ -152,7 +153,7 @@ static void render_preset(const preset_t *pr, uint32_t idx, const char *dir)
             for (k = 0; k < NVOICE; k++)
                 if (t->v[k].active)
                     t->v[k].gate = 0, t->v[k].stage = 3;
-        if (pr->fenv)            /* the preset's filter envelope: a decaying push of Y after each note-on */
+        if (pr->fenv)            /* the preset's filter envelope: a decaying push of the cutoff after the note-on */
             cut = (pr->fenv * 2 * 256 * (int32_t)(b < 900 ? 900 - b : 0)) / 900;
         block(t, out, last, sh, cut);
         for (i = 0; i < CTL; i++) {
@@ -268,6 +269,75 @@ static void coverage_test(void)
     printf("coverage: %u sources x %d paths\n", WS_NSRC, WS_NPATH);
 }
 
+/* the filter: LP takes the top off a saw, HP the body of a sine, BP sits between; full resonance swept over the whole
+ * range (modulation, key tracking) stays bounded, finite and dies out after the release */
+static int32_t filt_run(uint32_t type, int32_t cut, uint32_t wave, int32_t *dsum)
+{
+    track_t *t = &trk[3];
+    int32_t out[CTL], last[NVOICE] = {0}, peak = 0, prev = 0;
+    uint32_t b, i;
+    memset(t, 0, sizeof *t);
+    t->p[P_E0] = 0, t->p[P_E1] = 0, t->p[P_E3] = 64;
+    t->p[P_E4] = t->p[P_E5] = t->p[P_E6] = t->p[P_E7] = (int16_t)wave;
+    t->p[P_FTYPE] = (int16_t)type, t->p[P_CUT] = (int16_t)cut, t->p[P_RES] = 0, t->p[P_FKEY] = 0;
+    voice_on(t, &t->v[0], 48);
+    *dsum = 0;
+    for (b = 0; b < 200; b++) {
+        block(t, out, last, 0, 0);
+        for (i = 0; i < CTL; i++) {
+            int32_t a = out[i] < 0 ? -out[i] : out[i], d = out[i] - prev;
+            prev = out[i];
+            if (b >= 100) {                                  /* (settled) */
+                peak = a > peak ? a : peak;
+                *dsum += (d < 0 ? -d : d) >> 4;
+            }
+        }
+    }
+    return peak;
+}
+static void filter_test(void)
+{
+    int32_t d_off, d_lp, d_bp, p_off, p_lp, p_hp, p_sine, tail = 0, peak = 0;
+    track_t *t = &trk[3];
+    int32_t out[CTL], last[NVOICE] = {0};
+    uint32_t b, i;
+    p_off = filt_run(0, 127, WW_SAW, &d_off);
+    p_lp = filt_run(1, 24, WW_SAW, &d_lp);
+    (void)filt_run(2, 60, WW_SAW, &d_bp);
+    p_sine = filt_run(0, 127, WW_SINE, &d_bp);
+    p_hp = filt_run(3, 100, WW_SINE, &d_bp);
+    CHECK(d_lp * 5 < d_off && p_lp > 1000, "filter LP 24: the saw's top (%d against %d), level %d", d_lp, d_off, p_lp);
+    CHECK(p_hp * 5 < p_sine, "filter HP 100: a low sine's body (%d against %d)", p_hp, p_sine);
+    CHECK(p_off > 1000, "filter OFF: as before (peak %d)", p_off);
+    memset(t, 0, sizeof *t);                             /* full resonance, swept up and down the whole range */
+    t->p[P_E0] = 64, t->p[P_E1] = 64, t->p[P_E3] = 64;
+    t->p[P_E4] = WW_SAW, t->p[P_E5] = WW_SQR, t->p[P_E6] = WW_BUZZ, t->p[P_E7] = WW_SYNC;
+    t->p[P_FTYPE] = 1, t->p[P_CUT] = 64, t->p[P_RES] = 127, t->p[P_FKEY] = 127;
+    for (i = 0; i < 4u; i++)
+        voice_on(t, &t->v[i], 24 + i * 19);
+    for (b = 0; b < 1600; b++) {
+        int32_t cut = (int32_t)((b % 400u) < 200u ? b % 400u : 400u - b % 400u) * 300 * 256 / 200 - 150 * 256;
+        if (b == 800)
+            t->p[P_FTYPE] = 2;
+        if (b == 1000)
+            t->p[P_FTYPE] = 3;
+        if (b == 1300)
+            for (i = 0; i < NVOICE; i++)
+                if (t->v[i].active)
+                    t->v[i].gate = 0, t->v[i].stage = 3;
+        block(t, out, last, 0, cut);
+        for (i = 0; i < CTL; i++) {
+            int32_t a = out[i] < 0 ? -out[i] : out[i];
+            peak = a > peak ? a : peak;
+            if (b >= 1550)
+                tail += a > 2;
+        }
+    }
+    CHECK(peak < 4 * 2 * 32768, "filter: full resonance swept, LP BP HP, peak %d (bounded)", peak);
+    CHECK(tail == 0, "filter: silent after the release (%d)", tail);
+    printf("filter: LP top %d/%d, HP body %d/%d, resonance sweep peak %d\n", d_lp, d_off, p_hp, p_sine, peak);
+}
+
 /* the worst case: 8 voices, all four corners sequences mid-crossfade most of the time */
 static void cpu_test(void)
 {
@@ -286,6 +356,12 @@ static void cpu_test(void)
         block(t, out, last, 0, 0);
     ns = (double)(clock() - c0) / CLOCKS_PER_SEC * 1e9 / (20000.0 * CTL * NVOICE);
     printf("cpu: %.1f ns per voice-sample on this machine (worst case: 4 crossfading sequences)\n", ns);
+    t->p[P_FTYPE] = 1, t->p[P_CUT] = 64, t->p[P_RES] = 64;
+    c0 = clock();
+    for (b = 0; b < 20000; b++)
+        block(t, out, last, 0, 0);
+    printf("cpu: %.1f ns with the filter (LP)\n",
+           (double)(clock() - c0) / CLOCKS_PER_SEC * 1e9 / (20000.0 * CTL * NVOICE));
 }
 
 int main(int argc, char **argv)
@@ -299,6 +375,7 @@ int main(int argc, char **argv)
     sweep_test(dir);
     alias_render(dir);
     coverage_test();
+    filter_test();
     cpu_test();
     if (fails) {
         printf("FAIL: %d checks\n", fails);

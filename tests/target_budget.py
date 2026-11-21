@@ -29,7 +29,7 @@ FUNCS = ["ws_render", "ws_run", "ws_tap", "ws_inc",              # STORM (eng_wa
 OPTIONAL = {"uac_tap48": 507,           # (absent from a FELUCCA_UAC_48K=0 or FELUCCA_UAC=0 build)
             "mix_part": 1754}           # (WaveStorm's one part: inlined into the audio ISR)
 # no mix_part (inlined into the audio ISR: WaveStorm's one part, or a FELUCCA_CPU2=0 build): the ISR against this
-ONE_CORE = {"fm1_alnk0_irq": 3896}
+ONE_CORE = {"fm1_alnk0_irq": 3925}
 TOL = 0.10                      # exact (no noise): small edits pass, a grown render loop does not
 DIV_W = 8                       # a divide weighs 1 + 8 instructions
 NEST = 4                        # an instruction in a loop inside a loop weighs 4, two deep 16, ...

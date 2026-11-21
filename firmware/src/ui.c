@@ -1125,6 +1125,7 @@ static void apply_preset_to(track_t *t, uint32_t pi)
         for (i = 0; i < 4u; i++)
             t->p[P_DIST + i] = (int16_t)(pr->fx[i] ? pr->fx[i] - 1 : FX_DEF[i]);
     }
+    ws_preset_filter(t->p, pi);                       /* WaveStorm: the preset's filter (eng_wavestorm.c) */
     load_end(t);
 }
 

@@ -49,12 +49,12 @@ int main(void)
     /* ---- the pages */
     ok = 1;
     for (i = 0; i < NPAGES; i++) {                     /* (their page kinds are gone from params.c too) */
-        static const char *const GONE[] = {"SONG", "PROJECT", "MIXER", "SLICER", "SLICES", "LANES", "DETAIL", "FILTER"};
+        static const char *const GONE[] = {"SONG", "PROJECT", "MIXER", "SLICER", "SLICES", "LANES", "DETAIL"};
         uint32_t g;
         for (g = 0; g < sizeof GONE / sizeof GONE[0]; g++)
             ok &= !str_eq(PAGES[i].title, GONE[g]);
     }
-    CHECK(ok, "no SONG, PROJECT, MIXER, SLICER, LANES, DETAIL or FILTER page");
+    CHECK(ok, "no SONG, PROJECT, MIXER, SLICER, LANES or DETAIL page");
     CHECK(str_eq(PAGES[page_first(FAM_GLO)].title, "CLOCK") && str_eq(PAGES[page_first(FAM_TRK)].title, "OUTPUT"),
           "GLO opens CLOCK; HOME's taps OUTPUT, then CLOCK");
 
@@ -181,11 +181,45 @@ int main(void)
         CHECK(!ws_state_ok(&ws_state, sizeof ws_state), "a damaged autosave is ignored");
     }
 
-    /* ---- MIDI: CC 71 X, CC 74 Y (channel 1: the part) */
-    web_midi(0xB0, 71, 0);
-    web_midi(0xB0, 74, 127);
+    /* ---- MIDI: CC 16 X, CC 17 Y, CC 74 CUTOFF, CC 71 RESONANCE (channel 1: the part) */
+    web_midi(0xB0, 16, 0);
+    web_midi(0xB0, 17, 127);
+    web_midi(0xB0, 74, 32);
+    web_midi(0xB0, 71, 100);
     render_ms(100);
-    CHECK(t->p[P_E0] == 0 && t->p[P_E1] == 127, "MIDI CC 71 -> X, CC 74 -> Y (X %d, Y %d)", t->p[P_E0], t->p[P_E1]);
+    CHECK(t->p[P_E0] == 0 && t->p[P_E1] == 127 && t->p[P_CUT] == 32 && t->p[P_RES] == 100,
+          "MIDI CC 16 -> X, 17 -> Y, 74 -> CUTOFF, 71 -> RESONANCE (X %d, Y %d, CUT %d, RES %d)", t->p[P_E0], t->p[P_E1],
+          t->p[P_CUT], t->p[P_RES]);
+
+    /* ---- the filter: its page, a preset's setting, and a note through every TYPE */
+    {
+        uint32_t i, pg = NPAGES, vb = 0, ok_f = 1;
+        float pk[4];
+        for (i = 0; i < NPAGES; i++)
+            if (str_eq(PAGES[i].title, "FILTER") && PAGES[i].fam == FAM_EDIT && PAGES[i].id[0] == P_FTYPE)
+                pg = i;
+        for (i = 0; i < ENG_WAVESTORM.npresets; i++)
+            if (str_eq(ENG_WAVESTORM.presets[i].name, "VECT BASS"))
+                vb = i;
+        apply_preset_to(t, vb);
+        ok_f = t->p[P_FTYPE] == 1 && t->p[P_CUT] < 64 && t->p[P_ED_FLT] > 0;
+        t->p[P_LEVEL] = TP[P_LEVEL].def;                 /* (the user preset test above left the mix and the ARP set) */
+        t->p[P_AMODE] = TP[P_AMODE].def;
+        for (i = 0; i < 4u; i++) {
+            t->p[P_FTYPE] = (int16_t)i;
+            t->p[P_CUT] = 70;
+            web_keys(1u << 12);
+            render_ms(300);
+            pk[i] = peak;
+            web_keys(0);
+            render_ms(1500);
+        }
+        CHECK(pg < NPAGES && ok_f && pk[0] > 0.01f && pk[1] > 0.002f && pk[2] > 0.002f && pk[3] > 0.002f,
+              "EDIT > FILTER; VECT BASS sets its low-pass; OFF LP BP HP all sound (%.3f %.3f %.3f %.3f)", pk[0], pk[1],
+              pk[2], pk[3]);
+        apply_preset_to(t, 0);
+        render_ms(100);
+    }
 
     /* ---- MIDI IN: one channel (CH1..CH16) or OMNI; the part hears nothing else */
     {

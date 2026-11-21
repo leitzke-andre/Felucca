@@ -148,6 +148,7 @@ static void ws_note_on(track_t *t, voice_t *v)
     v->s[2] = 0 | 1 << 8;        /* the path: from point 0 to point 1 */
     v->s[3] = 0;
     v->s[4] = 0;                 /* X and Y: jump to the first target (a retrigger keeps s[0], s[1], s[4]: glides on) */
+    v->s[5] = v->s[6] = 0;       /* the filter (a retrigger keeps it: no click) */
 }
 
 /* the path's offset now (Q15, *x and *y), then advance it by adv (ms Q10) */
@@ -260,6 +261,35 @@ static uint32_t ws_inc(const vmod_t *m, int32_t semi)
     return semi ? cents_inc(m->pitch16 + semi * 16, 0, m->fine) : m->inc;
 }
 
+/* the voice filter (P_FTYPE LP / BP / HP): Felucca-Engines' trapezoidal SVF (dsp.c tsvf_*, A. Simper) with its three
+ * taps, as ANALOG writes it out: LP v2, BP v1, HP in - k v1 - v2. At the cutoff the three peak alike (1/k: 2 at RES 0,
+ * ~0.15 at 127); linear to half scale, then a soft knee, so only resonance peaks saturate. CUTOFF (0..127) plus the
+ * voice's FLT modulation (ENV, LFO, the matrix's CUT: m->cutoff) plus KEY tracking from C4; the state in s[5], s[6] */
+static void ws_filter(const int16_t *p, voice_t *v, int32_t *acc, uint32_t n, const vmod_t *m)
+{
+    uint32_t ft = (uint32_t)clamp(p[P_FTYPE], 1, 3) - 1u, i;
+    int32_t cut = (p[P_CUT] << 8) + m->cutoff + ((p[P_FKEY] * (m->pitch16 - 60 * 16)) >> 3);
+    int32_t k = 8192 - clamp(p[P_RES], 0, 127) * 7600 / 127, ic1 = v->s[5], ic2 = v->s[6];
+    tsvf_t c;
+    tsvf_coef_k(&c, cut, k);
+    for (i = 0; i < n; i++) {
+        int32_t in = acc[i] >> 1, v3 = in - ic2, y, a;
+        int32_t v1 = (c.a1 * ic1 + c.a2 * v3) >> 13;
+        int32_t v2 = ic2 + ((c.a2 * ic1 + c.a3 * v3) >> 13);
+        ic1 = clamp(2 * v1 - ic1, -150000, 150000);
+        ic2 = clamp(2 * v2 - ic2, -150000, 150000);
+        y = ft == 0u ? v2 : ft == 1u ? v1 : in - ((k * v1) >> 12) - v2;
+        a = y < 0 ? -y : y;
+        if (a > 16000) {
+            a = 16000 + (softclip((a - 16000) * 2) >> 1);
+            y = y < 0 ? -a : a;
+        }
+        acc[i] = y * 2;
+    }
+    v->s[5] = ic1;
+    v->s[6] = ic2;
+}
+
 static void ws_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
 {
     const int16_t *p = t->p;
@@ -272,7 +302,7 @@ static void ws_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vm
     uint32_t c, nt = 0, i;
     ws_path(v, (uint32_t)clamp(p[P_E2], 0, WS_NPATH - 1), adv, &px, &py);
     tx = clamp(p[P_E0] * 258 + px + (m->shape - (64 << 8)) * 2, 0, 32767);   /* SHP modulation moves X */
-    ty = clamp(p[P_E1] * 258 + py + m->cutoff * 2, 0, 32767);               /* FLT modulation moves Y */
+    ty = clamp(p[P_E1] * 258 + py, 0, 32767);           /* (Y: the matrix's Y and the PATH; FLT moves the filter) */
     if (!v->s[4]) {
         x0 = tx;
         y0 = ty;
@@ -349,6 +379,8 @@ static void ws_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vm
         if (!used)
             cn->ph[0] += m->inc * n;
     }
+    if (p[P_FTYPE])
+        ws_filter(p, v, acc, n, m);
     for (i = 0; i < n; i++)
         out[i] += voice_amp(acc[i], m, i);
     v->ph[0] = wv->c[0].ph[0];
@@ -357,7 +389,8 @@ static void ws_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vm
     v->s[4] = 1;
 }
 
-/* name, {X, Y, PATH, RATE, WAV A, WAV B, WAV C, WAV D}, {A D S R}, fenv (moves Y), mono, FX(dist, chorus, delay, reverb),
+/* name, {X, Y, PATH, RATE, WAV A, WAV B, WAV C, WAV D}, {A D S R}, fenv (the filter's envelope amount: WS_PFILT),
+ * mono, FX(dist, chorus, delay, reverb),
  * pattern. The bank's map: X dark -> bright, Y smooth -> harsh; A or C keeps the body (a sine- or triangle-like corner) */
 #define WSQ_CYC (WS_NWAVES + 0)    /* the sequences come after the bank's waves */
 #define WSQ_ARP (WS_NWAVES + 1)
@@ -375,14 +408,14 @@ static const preset_t WS_PRESETS[] = {
     {"VOX PAD", {64, 64, 5, 25, WW_VOXA, WW_VOXO, WW_VOXE, WW_HOLLW}, {75, 90, 115, 90}, 0, 0, FX(0, 40, 20, 75), PAT(5)},
     {"DRIFT PAD", {64, 50, 4, 20, WW_TRI, WW_SAW, WW_SINE, WW_DIGI}, {85, 95, 110, 100}, 0, 0, FX(0, 70, 30, 70), PAT(5)},
     /* keys and plucks: a fast one-shot from a bright corner to the body */
-    {"VECT PLUCK", {10, 10, 8, 70, WW_TRI, WW_SAW, WW_SINE, WW_SYNC}, {0, 70, 30, 50}, 0, 0, FX(0, 20, 45, 30), PAT(3)},
-    {"GLASS KEYS", {20, 20, 8, 50, WW_SINE, WW_GLASS, WW_TRI, WW_BUZZ}, {2, 85, 40, 65}, 0, 0, FX(0, 30, 30, 45), PAT(6)},
+    {"VECT PLUCK", {10, 10, 8, 70, WW_TRI, WW_SAW, WW_SINE, WW_SYNC}, {0, 70, 30, 50}, 35, 0, FX(0, 20, 45, 30), PAT(3)},
+    {"GLASS KEYS", {20, 20, 8, 50, WW_SINE, WW_GLASS, WW_TRI, WW_BUZZ}, {2, 85, 40, 65}, 20, 0, FX(0, 30, 30, 45), PAT(6)},
     {"HIT KEYS", {0, 0, 0, 64, WSQ_HIT, WW_SQR, WW_SINE, WW_SAW}, {0, 80, 60, 50}, 0, 0, FX(0, 20, 30, 35), PAT(6)},
-    /* bass: the filter envelope pushes Y for the attack */
+    /* bass: the low-pass's envelope for the attack, Y for the colour */
     {"VECT BASS", {30, 0, 0, 64, WW_TRI, WW_SAW, WW_SQR, WW_SYNC}, {0, 60, 70, 25}, 45, 1, FX(5, 0, 10, 10), PAT(2)},
     {"FOLD BASS", {20, 10, 8, 80, WW_SINE, WW_FOLD, WW_TRI, WW_PLS25}, {0, 55, 80, 20}, 30, 1, FX(10, 0, 5, 5), PAT(8)},
     /* leads: X and Y on the HOME knobs for playing */
-    {"VECT LEAD", {80, 30, 0, 64, WW_SQR, WW_SAW, WW_PLS25, WW_SYNC}, {4, 70, 100, 40}, 0, 1, FX(0, 10, 45, 30), PAT(4)},
+    {"VECT LEAD", {80, 30, 0, 64, WW_SQR, WW_SAW, WW_PLS25, WW_SYNC}, {4, 70, 100, 40}, 15, 1, FX(0, 10, 45, 30), PAT(4)},
     {"VOX LEAD", {64, 20, 2, 55, WW_VOXA, WW_VOXE, WW_SAW, WW_SYNC}, {6, 70, 100, 45}, 0, 1, FX(0, 20, 40, 35), PAT(4)},
     /* evolving textures: wave sequences with long crossfades */
     {"SHIMMER", {0, 0, 0, 40, WSQ_SHM, WW_SINE, WW_SINE, WW_SINE}, {60, 90, 120, 100}, 0, 0, FX(0, 50, 40, 80), PAT(5)},
@@ -395,6 +428,26 @@ static const preset_t WS_PRESETS[] = {
 };
 
 typedef char ws_presets_fit[NELEM(WS_PRESETS) <= 24u ? 1 : -1];   /* favourites: 24 bits (favorites.c fav_bit) */
+/* each preset's filter, as WS_PRESETS (preset_t is Felucca-Engines' and has no room): TYPE (0 OFF, 1 LP, 2 BP, 3 HP),
+ * CUTOFF, RESONANCE, KEY; ui.c apply_preset_to sets them (ws_preset_filter) */
+static const uint8_t WS_PFILT[][4] = {
+    {0, 127, 0, 64},             /* STORM PAD: open (the vector is the tone) */
+    {0, 127, 0, 64}, {0, 127, 0, 64}, {1, 96, 20, 64},             /* GLASS PAD, VOX PAD, DRIFT PAD (a soft top) */
+    {1, 52, 30, 80}, {1, 70, 15, 64}, {0, 127, 0, 64},             /* VECT PLUCK, GLASS KEYS, HIT KEYS */
+    {1, 38, 50, 96}, {1, 48, 35, 80},                              /* VECT BASS, FOLD BASS */
+    {1, 84, 35, 80}, {2, 76, 40, 64},                              /* VECT LEAD, VOX LEAD (a vocal band) */
+    {0, 127, 0, 64}, {0, 127, 0, 64}, {0, 127, 0, 64},             /* SHIMMER, VOWELS, CYCLES */
+    {3, 30, 20, 64}, {1, 80, 45, 64}, {0, 127, 0, 64},             /* RHYTHM (thinned), ARP SEQ, DIGI SEQ */
+};
+typedef char ws_pfilt_fit[NELEM(WS_PFILT) == NELEM(WS_PRESETS) ? 1 : -1];
+static void ws_preset_filter(int16_t *p, uint32_t pi)
+{
+    const uint8_t *f = WS_PFILT[pi % NELEM(WS_PFILT)];
+    p[P_FTYPE] = f[0];
+    p[P_CUT] = f[1];
+    p[P_RES] = f[2];
+    p[P_FKEY] = f[3];
+}
 
 static const engine_t ENG_WAVESTORM = {
     .name = "STORM",
@@ -414,6 +467,6 @@ static const engine_t ENG_WAVESTORM = {
     .note_on = ws_note_on,
     .render = ws_render,
     .knob = {P_E0, P_E1, P_E2, P_E3},
-    .keep = 0x13,                /* X, Y and their set flag: a retrigger glides on */
+    .keep = 0x73,                /* X, Y and their set flag: a retrigger glides on; the filter's state */
     .mem = sizeof(ws_part_t),
 };

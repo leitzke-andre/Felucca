@@ -27,18 +27,21 @@ Each voice plays four corner sources A, B, C, D, blended by an X/Y position:
 - **PATH** is a vector envelope: a breakpoint path around the X/Y position, restarted on each note. Loops (X-SWP,
   Y-SWP, CIRC, FIG8, BOX, DIAM, WANDR) or one-shots (PLUCK: from the bright corner into the knob position, SWELL).
 - **RATE** scales the speed of the path and of the wave sequences together: 1/8x at 0, 1x at 64, ~8x at 127.
-- The modulation steers the vector: anything routed to **SHP** moves X and anything routed to **FLT / CUT** moves Y
-  (ENV DEST, LFO DEST, the matrix, aftertouch, and a preset's filter envelope amount). There is no filter after the
-  mixer in this version; the vector is the tone control.
+- **The filter:** after the vector mix, every voice has a resonant state-variable filter (Felucca-Engines' SVF), EDIT >
+  FILTER: TYPE (OFF, LP, BP, HP), CUT, RES and KEY tracking. Anything routed to **FLT / CUT** moves its cutoff (ENV DEST,
+  LFO DEST, the matrix, aftertouch, a preset's envelope amount). OFF by default and in the pads (the vector is their
+  tone), on in the basses, plucks, keys and leads.
+- The modulation also steers the vector: anything routed to **SHP** moves X; the matrix's **X** and **Y** destinations
+  move either (per block), and the PATH moves both per voice.
 - **MIDI:** the part listens on one channel, MENU > MIDI > MIDI IN: CH1 (default) .. CH16, or OMNI (every channel);
-  the keys' notes go out on it too. CC 71 sets X, CC 74 sets Y, as well as Felucca's usual CCs (level, pan, envelope,
-  sends). Felucca's channel blocks (CH1-4 ..), SEL, TRACK, T1..T4 CHANNEL and AUTO SELECT are gone with its tracks.
+  the keys' notes go out on it too. CC 74 sets the CUTOFF and CC 71 the RESONANCE (the standard sound controllers),
+  CC 16 X and CC 17 Y, as well as Felucca's usual CCs (level, pan, envelope, sends). Felucca's channel blocks (CH1-4 ..), SEL, TRACK, T1..T4 CHANNEL and AUTO SELECT are gone with its tracks.
 
 ## Using it
 
 | Button | Pages |
 | --- | --- |
-| EDIT | `VECT`: X, Y, PATH, RATE · `WAVE`: WAV A..D · VOICE pages (poly/mono, glide, spread, aftertouch) |
+| EDIT | `VECT`: X, Y, PATH, RATE · `WAVE`: WAV A..D · `FILTER`: TYPE, CUT, RES, KEY · VOICE pages (poly/mono, glide, spread, aftertouch) |
 | HOME | the home screen: the vector square (KNOB 1..4: X, Y, PATH, RATE); tapped again OUTPUT (LEVEL PAN SPREAD MUTE), then CLOCK |
 | GLO | CLOCK (tempo, swing, clock source); held: the GLO layer (tap tempo, MIDI LEARN) |
 | SEQ | STEP (the piano roll: notes, ties, rests, accent, slide; a step held and a knob turned: a parameter lock), PATTERN (LEN DIV SWING GATE), AUTOMATION (recorded knob moves, locks, per-step VEL) |
@@ -78,7 +81,7 @@ Each voice plays four corner sources A, B, C, D, blended by an X/Y position:
 | `firmware/src/ws_store.c` | WaveStorm's storage: settings, user presets, the autosave, CLEAR ALL |
 | `firmware/src/core.h` | One part (`NPART` 1, in a `trk[]` of four as a safety net), STORM as engine 0, the 8-byte step |
 | `firmware/src/params.c`, `upreset.c` | The pages (OUTPUT, CLOCK on GLO, PATTERN on SEQ), user presets with their pattern |
-| `firmware/src/dsp.c` + `firmware/engines/` | Felucca-Engines' shared DSP (kept for its SVF: a filter after the mixer is next) |
+| `firmware/src/dsp.c` + `firmware/engines/` | Felucca-Engines' shared DSP: the tables and the SVF the voice filter uses |
 | `tests/` | The WaveStorm tests, Felucca's tests of the platform kept as it is, the target cost check (below) |
 
 - **Kept for what comes next.** The second core (`FELUCCA_CPU2`), the multi-part structure at `NPART` 1 (layers), the
@@ -119,7 +122,7 @@ keys, 1..0 the buttons FX SCL ENV LFO EDIT GLO HOME SAVE ARP SEQ, `-` PLAY, `=` 
   clicks, all sources and paths, no aliasing on a rising saw);
 - the whole firmware as the browser demo builds it, under ASan/UBSan: one part, no removed page, every family's button
   opens its pages, a note sounds and releases to silence, user presets with their pattern, the autosave and a damaged
-  one ignored, CC 71 / 74, all 56 sources, a heavy pattern;
+  one ignored, CC 16 / 17 / 71 / 74, the FILTER page and every TYPE, all 56 sources, a heavy pattern;
 - Felucca's own tests of what WaveStorm keeps unchanged: keys and buttons, TRS MIDI (parser, UART DMA, TIMER5
   timestamps), USB audio and its descriptors (20 layouts), flash storage, M-UPGRADE, the update loader (needs the JieLi
   AC79 SDK), the package and the installer, the text renderer, palettes and font spacing (needs Pillow);
@@ -155,9 +158,9 @@ with one part that borrowing read past the end of it.
 - **The bundled web editor** (`web/editor.html`) is Felucca's: it shows four tracks, projects, songs and samples that
   this build does not answer.
 - **On-device editing** of paths and sequences (the design's VECTOR PATH, CORNER and WAVESEQ pages), recording a path
-  from the knobs, a filter after the mixer, tempo-synced sequence steps, layers.
+  from the knobs, wavestate-style lanes with probability, tempo-synced sequence steps, layers.
 - **User presets** keep 16 steps of the 64 (the record format is Felucca's); the free ALGORITHM knob could steer X.
 - **Old Felucca data** on a unit is ignored, not converted: its user presets (other engines) read as empty, its autosave
-  is not WaveStorm's format (an autosave of an earlier WaveStorm build is ignored too: version 4 now), and MIDI LEARN
+  is not WaveStorm's format (an autosave of an earlier WaveStorm build is ignored too: version 5 now), and MIDI LEARN
   maps made with Felucca point at other parameters (the numbers moved).
   Settings carry over.

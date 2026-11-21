@@ -206,17 +206,17 @@ static int midi_track_held(uint32_t track)
 /* The standard CC map (#103): always on, these CCs only, on the track the channel plays (ROUT as notes). A CC
  * sets its parameter as a knob would, 0..127 over the parameter's range (64: the middle of a bipolar one), and
  * AUTOMATION records it as a knob move (motion_capture: the selected track, armed and playing). CC74 / CC71 are
- * the engine's own brightness / resonance (MIDI_CC_ENG); an engine without one ignores them. CC121 resets none
- * of them (RP-015: they are the sound's) */
-#define MCC_CUT 0xFEu
-#define MCC_RES 0xFFu
+ * the filter's CUTOFF / RESONANCE (the standard sound controllers); CC16 / CC17 the engine's own two (MIDI_CC_ENG:
+ * STORM's X and Y). CC121 resets none of them (RP-015: they are the sound's) */
+#define MCC_EA 0xFEu
+#define MCC_EB 0xFFu
 static const uint8_t MIDI_CC_MAP[][2] = {
-    {5, P_GLIDE}, {7, P_LEVEL}, {10, P_PAN}, {71, MCC_RES}, {72, P_REL}, {73, P_ATK}, {74, MCC_CUT}, {75, P_DEC},
-    {91, P_REV}, {93, P_CHOR}, {94, P_DLY},
+    {5, P_GLIDE}, {7, P_LEVEL}, {10, P_PAN}, {16, MCC_EA}, {17, MCC_EB}, {71, P_RES}, {72, P_REL}, {73, P_ATK},
+    {74, P_CUT}, {75, P_DEC}, {91, P_REV}, {93, P_CHOR}, {94, P_DLY},
 };
-/* per engine (ENGINES[] order): CC74's E index + 1 in the high nibble, CC71's in the low one, 0 = none */
+/* per engine (ENGINES[] order): CC16's E index + 1 in the high nibble, CC17's in the low one, 0 = none */
 static const uint8_t MIDI_CC_ENG[NENGINES] = {
-    0x21,                                             /* STORM: CC74 (brightness) Y, CC71 X */
+    0x12,                                             /* STORM: CC16 X, CC17 Y */
 };
 /* a CC sets parameter id of track t as a knob would: 0..127 over its range */
 static void midi_cc_set(track_t *t, uint32_t id, uint32_t value)
@@ -283,10 +283,10 @@ static void __attribute__((noinline)) midi_cc_map(track_t *t, uint32_t cc, uint3
     for (i = 0; i < NELEM(MIDI_CC_MAP); i++)
         if (MIDI_CC_MAP[i][0] == cc)
             id = MIDI_CC_MAP[i][1];
-    if (id >= MCC_CUT) {
+    if (id >= MCC_EA) {
         if (id == 0xFFFFu)
             return;
-        e = MIDI_CC_ENG[eng_idx(t->eng_req)] >> (id == MCC_CUT ? 4 : 0) & 15u;
+        e = MIDI_CC_ENG[eng_idx(t->eng_req)] >> (id == MCC_EA ? 4 : 0) & 15u;
         if (!e)
             return;
         id = P_E0 + e - 1u;
