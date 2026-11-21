@@ -83,7 +83,7 @@ static int mom_turn(uint32_t k, int32_t s)
     const param_desc_t *d;
     int16_t *vp = 0;
     uint32_t i, g;
-    const track_t *t = ui.home ? home_trk(k) : TSEL;     /* (HOME LEVELS: KNOB k is track k's) */
+    const track_t *t = TSEL;
     if (ui.home) {
         d = home_param(k, &vp);
     } else if (pg->scope == SC_TRK && !lock_held()) {  /* MIXER (#195): the selected track's LEVEL PAN REV MUTE */
@@ -1369,8 +1369,8 @@ static void ui_input(void)
             int16_t *vp;
             const param_desc_t *d = home_param(k, &vp);
             *vp = (int16_t)param_turn(d, *vp, accel(EN_K1 + k, s, d->fmt == F_ENUM ? 0 : d->max - d->min));
-            motion_capture(home_trk(k), (uint32_t)(vp - home_trk(k)->p), *vp);   /* (LEVELS: that track's, as MIXER) */
-            ml_knob(home_trk(k), (uint32_t)(vp - home_trk(k)->p));
+            motion_capture(TSEL, (uint32_t)(vp - TSEL->p), *vp);
+            ml_knob(TSEL, (uint32_t)(vp - TSEL->p));
         } else {
             edit_param(k, s);
         }

@@ -54,7 +54,6 @@ static const struct { const char *title, *hint; } HELP_PAGE[] = {
     {"CLOCK", "[SELECT]TEMPO[GLO]HOLD: TAP"},
 };
 #define H_HOME "[PRESETS]SOUND[HOME]HOLD: MENU"
-#define H_LEVELS "[K1-4]T1-T4 LEVEL[HOME]MIXER"
 /* a layer's (LAYER_*): what its footer row (LAYERS[].foot) does not say */
 static const char *const HELP_LAYER[LAYER_N] = {
     "", "[KEYS]BLACK: MUTES[FX]2 TAPS: LOCK", "[KEYS]SOLO MUTE FILL TAP[K1-4]LEVELS", "[KEYS]ROOT[K1-4]ROOT SCL CHORD",
@@ -67,7 +66,7 @@ static const char *help_page(void)
     uint32_t i;
     const char *t;
     if (ui.home)
-        return home_levels() ? H_LEVELS : H_HOME;
+        return H_HOME;
     t = cur_page()->title;
     if (sel_mode() != SEL_BPM && str_eq(t, "CLOCK"))   /* (1.5.5: SELECT steps the pages; 1.5.6: or plays) */
         return "[K1]TEMPO[GLO]HOLD: TAP";

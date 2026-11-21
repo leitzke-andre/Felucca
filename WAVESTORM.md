@@ -37,13 +37,21 @@ Each voice plays four corner sources A, B, C, D, blended by an X/Y position:
 | Button | Pages |
 | --- | --- |
 | EDIT | `VECT`: X, Y, PATH, RATE · `WAVE`: WAV A..D · VOICE pages (poly/mono, glide, spread, aftertouch) |
-| HOME | the home screen (KNOB 1..4: X, Y, PATH, RATE); tapped again OUTPUT (LEVEL PAN SPREAD MUTE), then CLOCK |
+| HOME | the home screen: the vector square (KNOB 1..4: X, Y, PATH, RATE); tapped again OUTPUT (LEVEL PAN SPREAD MUTE), then CLOCK |
 | GLO | CLOCK (tempo, swing, clock source); held: the GLO layer (tap tempo, MIDI LEARN) |
 | SEQ | STEP (the piano roll: notes, ties, rests, accent, slide; a step held and a knob turned: a parameter lock), PATTERN (LEN DIV SWING GATE), AUTOMATION (recorded knob moves, locks, per-step VEL) |
 | SAVE | USER (save / load / erase / rename user presets), PRESETS, PHRASES (factory patterns), TOOLS (CLEAR PAT, INIT SOUND) |
 | ARP, SCL, ENV, LFO, FX | as Felucca: the arpeggiator, scales and chords, envelopes, LFOs and the modulation matrix, effects (sends, the insert slot, the perform FX layer) |
 | REC | records notes and knob moves into the pattern; held: CLICK, COUNT-IN, LEVEL |
 
+- **The screen:** HOME and EDIT's VECT and WAVE pages show the vector as a joystick's field: a square (X left to
+  right, Y top to bottom; A top left, B top right, C bottom left, D bottom right) with each corner's waveform beside
+  it, drawn brighter the more of the mix that corner has (a wave sequence shows the step it plays). In the square:
+  the X/Y knobs' position (a cross), the PATH's shape around it, and a dot where the sound is: peach while a note
+  sounds, moving along the path with the modulation, on the cross otherwise. MENU > DISPLAY > HOME switches HOME to
+  the oscilloscope (SCOPE) instead; Felucca's four-track TRACKS and LEVELS views are gone.
+- **The look:** the MINT palette, after the FM-1's black-and-mint edition, is the default (MENU > COLOR has
+  Felucca's others).
 - **Presets (17):** STORM PAD, GLASS PAD, VOX PAD, DRIFT PAD, VECT PLUCK, GLASS KEYS, HIT KEYS, VECT BASS, FOLD BASS,
   VECT LEAD, VOX LEAD, SHIMMER, VOWELS, CYCLES, RHYTHM, ARP SEQ, DIGI SEQ. The power-on sound is STORM PAD.
 - **User presets** (32 slots) store the whole part except its mix: the sound, the ARP, SCL and CHORD settings, and the

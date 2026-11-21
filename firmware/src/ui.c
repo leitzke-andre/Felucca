@@ -82,11 +82,9 @@ static uint32_t up_gen;                      /* bumped on every user bank change
  * VEL as PAGE (its bit 4), before 1.5.5 both as BPM) */
 enum { SEL_BPM, SEL_PAGE, SEL_MODW, SEL_VEL, SEL_N };
 static uint32_t sel_mode(void) { return ((ui_prefs2 >> 4) & 1u) | ((ui_prefs2 >> 5) & 2u); }
-/* 1.3 (Discussions #112, #134): MENU > DISPLAY > HOME, what the HOME page shows under its four cards: 0 SCOPE (the
- * oscilloscope, as before), 1 TRACKS (the four tracks as rows: ui_graph.c draw_home_tracks), 2 LEVELS (1.5, #134: the
- * rows of TRACKS, and KNOB 1..4 the LEVEL of T1..T4 in place of the engine's four: home_param). A byte of its own no
- * engine uses, saved with the settings; 0 in older settings = SCOPE; an unknown value (a later firmware's view) reads as
- * SCOPE and is kept as saved (1.3 / 1.4 read LEVELS so) */
+/* MENU > DISPLAY > HOME, what the HOME page shows under its four cards: 0 VECTOR (WaveStorm's X/Y square, ui_graph.c
+ * graph_vector), 1 SCOPE (the oscilloscope). A byte of its own no engine uses, saved with the settings; 0 in older
+ * settings, or another value (Felucca's TRACKS and LEVELS, four-track views), reads as VECTOR */
 #define ui_home_view (favorites.factory[15][26])
 /* 1.5.6 (#212): MENU > DISPLAY > LEDS INV LO / INV HI: INV with the idle LEDs at the steady mid level (ui_input.c
  * ui_leds) instead of lit. The mode stays INV (settings_leds, panel.c: so firmware before 1.5.6 reads plain INV) and
@@ -94,9 +92,7 @@ static uint32_t sel_mode(void) { return ((ui_prefs2 >> 4) & 1u) | ((ui_prefs2 >>
  * Saved with the settings; read only while LEDS is INV (menu_items.c leds_row) */
 #define ui_leds_inv (favorites.factory[15][25])
 static uint32_t leds_inv(void) { return settings_leds == LEDS_INV && ui_leds_inv - 1u < 2u ? ui_leds_inv : 0u; }
-enum { HV_SCOPE, HV_TRACKS, HV_LEVELS, HV_COUNT };
-static int home_tracks(void) { return ui_home_view == HV_TRACKS || ui_home_view == HV_LEVELS; }
-static int home_levels(void) { return ui_home_view == HV_LEVELS; }
+enum { HV_VECTOR, HV_SCOPE, HV_COUNT };
 enum { RP_CLICK, RP_LEVEL, RP_COUNTIN };
 static uint32_t rp_get(uint32_t f)                     /* a field as the MENU steps it: 0..2 */
 {
@@ -374,8 +370,8 @@ static uint32_t large_kind(void)
         return LK_OFF;
     if (ui.layer)
         return LK_LABEL;
-    if (ui.home)                                        /* (HOME > TRACKS: its rows need the panel, the cards as on */
-        return home_tracks() ? LK_LABEL : LK_TALL;      /* a list page; the rows' names in M: draw_home_tracks) */
+    if (ui.home)
+        return LK_TALL;
     g = cur_page()->graph;
     return g == GR_BROWSE || g == GR_USER || g == GR_PATS || g == GR_ROLL ||
            g == GR_EVENTS ? LK_LABEL : LK_TALL;
@@ -1442,14 +1438,12 @@ static uint32_t preset_visible(uint32_t cur, uint32_t total, uint32_t row)
     return first + row < total ? first + row : total;
 }
 
-/* HOME: the track KNOB k edits (MENU > HOME LEVELS, 1.5: track k; else the selected one) and what: the engine's four
- * main parameters, or (LEVELS) the track's LEVEL, as the GLO layer's knobs */
-static track_t *home_trk(uint32_t k) { return home_levels() ? &trk[k & 3u] : TSEL; }
+/* HOME: what KNOB k edits: the engine's four main parameters (STORM: X, Y, PATH, RATE) */
 static const param_desc_t *home_param(uint32_t k, int16_t **vp)
 {
-    uint32_t id = home_levels() ? (uint32_t)P_LEVEL : ENGINES[TSEL->eng_req % NENGINES]->knob[k & 3u];
-    *vp = &home_trk(k)->p[id];
-    return track_desc(home_trk(k), id);
+    uint32_t id = ENGINES[TSEL->eng_req % NENGINES]->knob[k & 3u];
+    *vp = &TSEL->p[id];
+    return track_desc(TSEL, id);
 }
 
 /* select track i (KNOB 1 on TRACKS, the editor): its sound, pages and pattern from now on */

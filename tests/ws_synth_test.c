@@ -83,6 +83,34 @@ int main(void)
         CHECK(!bad, "ENV LFO FX SCL EDIT GLO SAVE ARP SEQ: a tap opens their pages");
     }
 
+    /* ---- the look: MINT at power-on; HOME's vector square puts its dot where X and Y say */
+    CHECK(settings.palette == UI_DEFAULT_INDEX && str_eq(UI_PALETTES[UI_DEFAULT_INDEX].name, "MINT") &&
+          T_THEME == UI_PALETTES[UI_DEFAULT_INDEX].c2, "the palette at power-on: MINT");
+    {
+        int16_t keep[3] = {t->p[P_E0], t->p[P_E1], t->p[P_E2]};
+        uint32_t k, hits = 0;
+        static const int16_t XY[2][2] = {{0, 0}, {127, 127}};
+        for (k = 0; k < 2u; k++) {
+            int32_t x, y;
+            uint16_t px;
+            t->p[P_E0] = XY[k][0];
+            t->p[P_E1] = XY[k][1];
+            t->p[P_E2] = 0;                               /* (PATH OFF: the dot on the knobs' place) */
+            render_ms(200);
+            x = vx_px(XY[k][0] * 258);
+            y = (int32_t)graph_y() + vx_py(XY[k][1] * 258);
+            px = web_fb[y * 240 + x];
+            px = (uint16_t)(px >> 8 | px << 8);           /* (the panel's byte order) */
+            hits += ui.home && (px == T_THEME || web_fb[y * 240 + x] == T_THEME);
+        }
+        t->p[P_E0] = keep[0];
+        t->p[P_E1] = keep[1];
+        t->p[P_E2] = keep[2];
+        render_ms(100);
+        CHECK(hits == 2u, "HOME: the vector's dot at corner A for X 0 Y 0, at corner D for X 127 Y 127");
+    }
+
+
     /* ---- every corner source of the 48-wave bank and the sequences: sounds, no clipping */
     {
         uint32_t src, bad = 0;

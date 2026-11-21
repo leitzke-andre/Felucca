@@ -55,7 +55,11 @@ PALETTES = [
     # 1.0.2: black and white (the derived tokens are set, not blended: bw()); the old MONO is GREY (id 0)
     # 1.8: its primary and secondary GREY's red and blue (were white)
     ("MONO",   (0, 0, 0),       (255, 255, 255), (255, 255, 255), RED,       (72, 140, 255)),
+    # WaveStorm: the mint of the FM-1's black-and-mint edition (its keys, sampled from a photo: #89CCBA) on a
+    # green-black, a peach for the one active thing (the vector's dot, the cursor); WaveStorm's default
+    ("MINT",   (8, 18, 16),     (137, 204, 186), (226, 244, 238), RED,       (255, 176, 120)),
 ]
+DEFAULT = "MINT"                   # the palette at power-on with no settings (src/panel.c)
 BW = "MONO"
 BW_GREY = (82, 82, 82)             # MONO's one mid grey (RGB565 10/20/10): DIM LINE RAISE LANE
 # the 20 palettes of the earlier firmware (index order) -> the new palette
@@ -63,7 +67,7 @@ OLD = ["GREEN", "AMBER", "CYAN", "RED", "MONO", "VIOLET", "PINK", "ICE", "WARM",
        "LIGHT", "PAPER", "SKY", "MINT", "LILAC", "ROSE", "SAND", "L-HICON"]
 OLD_TO_NEW = {"GREEN": "GREEN", "AMBER": "AMBER", "CYAN": "ICE", "RED": "ROSE", "MONO": "GREY", "VIOLET": "VIOLET",
               "PINK": "ROSE", "ICE": "ICE", "WARM": "AMBER", "OCEAN": "ICE", "DUSK": "VIOLET", "HI-CON": "HI-CON",
-              "LIGHT": "PAPER", "PAPER": "PAPER", "SKY": "PAPER", "MINT": "PAPER", "LILAC": "PAPER", "ROSE": "PAPER",
+              "LIGHT": "PAPER", "PAPER": "PAPER", "SKY": "PAPER", "MINT": "MINT", "LILAC": "PAPER", "ROSE": "PAPER",
               "SAND": "PAPER", "L-HICON": "HI-CON"}
 PAL_TAG = 64                       # stored id = PAL_TAG + index; below 20: an old id
 OK_DARK, OK_LIGHT = (84, 214, 120), (20, 140, 60)   # 1.8: the battery on USB power (src/gfx.c T_OK), by BG
@@ -195,6 +199,7 @@ def main():
             v = [to565(c, p[0] == BW) for c in p[1:]]
             out.append(f'    {{"{p[0]}", ' + ", ".join(f"0x{x:04x}" for x in v) + "},")
         out += ["};", f"#define UI_NPALETTES {len(PALETTES)}u", "#define UI_GREY_INDEX 0u",
+                f"#define UI_DEFAULT_INDEX {names.index(DEFAULT)}u          /* {DEFAULT}: the palette with no settings */",
                 f"#define UI_BW_INDEX {names.index(BW)}u          /* MONO: black and white (src/gfx.c palette_set) */",
                 f"#define UI_BW_GREY 0x{to565(BW_GREY):04x}u          /* MONO's one grey: DIM LINE RAISE LANE */",
                 f"#define UI_PAL_TAG {PAL_TAG}u          /* stored id = UI_PAL_TAG + index; below 20: an old id */"]
