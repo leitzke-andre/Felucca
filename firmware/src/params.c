@@ -48,9 +48,9 @@ static const char *const N_ALLOC[] = {"ROT", "REUSE"};
 static const char *const N_ORDER[] = {"NOTE", "PLAY"};
 static const char *const N_CLOCK[] = {"INT", "USB", "TRS"};
 static const char *const N_MIDI_INPUT[] = {"USB", "TRS"};
-/* MIDI IN (seq.c midi_base): 1..4 -> parts, 5..16 ignored / all -> selected / (1.2, append-only) 5..8, 9..12, 13..16 -> parts
- * / (1.5.5, #202) TRACK: each track its own channel (song.mch, MENU > MIDI > T1..T4 CHANNEL) */
-static const char *const N_ROUTE[] = {"CH1-4", "SEL", "CH5-8", "CH9-12", "CH13-16", "TRACK"};
+/* MIDI IN (seq.c midi_slot): the one channel the part listens to (and MIDI OUT sends on), or OMNI: every channel */
+static const char *const N_ROUTE[] = {"CH1", "CH2", "CH3", "CH4", "CH5", "CH6", "CH7", "CH8", "CH9", "CH10", "CH11",
+                                      "CH12", "CH13", "CH14", "CH15", "CH16", "OMNI"};
 static const char *const N_NOTE[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 static const char *const N_DASH[] = {"--"};
 static const char *const N_RTYPE[] = {"ROOM", "SPRING", "HALL"};   /* G_RTYPE: the reverb bus's model (fx.c) */

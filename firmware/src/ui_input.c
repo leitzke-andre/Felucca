@@ -991,15 +991,8 @@ static int page_tap(uint32_t b)
 }
 
 
-/* 1.5.5 (#208): MIDI IN notes since the last frame (seq.c midi_seen): their tracks light (midi_lit), and with MENU > MIDI >
- * AUTO SELECT ON a track that is not selected becomes the selected one, but not while the selected track has had notes
- * within MF_HOLD_MS (two tracks played together, a chord across tracks: the selection stays) nor within MF_HOLD_MS of the
- * last such switch (no flicker), nor with MIDI IN SEL (every note is the selected track's), the menu or a layer up, nor
- * while the selected track is being edited (mf_busy). The lowest such track if several. 1: it switched */
-#define MF_HOLD_MS 250u
 /* every pass's start (the menu, NAME, SCREEN OFF too): the notes since the last pass light their tracks and are this
- * pass's (mf_seen: SCREEN WAKE +MIDI, AUTO SELECT); a pass that returns before midi_follow drops them (no AUTO SELECT
- * later from a note played in the menu, NAME or the dark) */
+ * pass's (mf_seen: SCREEN WAKE +MIDI) */
 static void midi_take(void)
 {
     uint32_t k, now = fm1_ms | 1u;
@@ -1010,35 +1003,6 @@ static void midi_take(void)
     for (k = 0; k < NTRK; k++)
         if ((mf_seen >> k) & 1u)
             midi_lit_ms[k] = now;
-}
-/* an edit of the selected track in progress: a step held for a lock (STEP, the DRUM grid), a step being entered on the
- * roll, a grid hit waiting for its key's release, a dialog */
-static int mf_busy(void)
-{
-    return lock_held() || (ui.entry_open && (fm1_in.notes & ~kb_layer)) || ui.confirm;
-}
-static int midi_follow(void)
-{
-    static uint32_t sw_ms;                              /* the last switch, fm1_ms | 1 (0 none) */
-    uint32_t seen = mf_seen, k, now = fm1_ms | 1u, cand, lit;
-    mf_seen = 0;
-    if (!seen)
-        return 0;
-    lit = midi_lit_ms[song.sel];                        /* (the selected track's last note: midi_take lit it now if */
-                                                        /* this pass has one, and then nothing switches) */
-    cand = seen & ~(1u << song.sel);
-    k = 0;
-    if (cand && !((seen >> song.sel) & 1u) && (ui_rec_prefs & (PREF_MIDI_FOLLOW >> 8)) && song.g[G_ROUTE] != ROUTE_SEL &&
-        !ui.menu && !ui.layer && !mf_busy() && (!lit || now - lit >= MF_HOLD_MS) &&
-        (!sw_ms || now - sw_ms >= MF_HOLD_MS)) {
-        while (!((cand >> k) & 1u))
-            k++;
-        track_select(k);
-        sw_ms = now;
-        k = 1;
-    } else
-        k = 0;
-    return (int)k;
 }
 
 /* messages of things that happened elsewhere (a load, the editor, MIDI in): after this frame's own */
@@ -1051,8 +1015,7 @@ static void ui_notices(void)
         ui_message(clock_lost == 1u ? "NO CLOCK (USB)" : "NO CLOCK (TRS)");
         clock_lost = 0;
     }
-    if (midi_follow())                                  /* (AUTO SELECT took the track: no "MIDI IN -> Tn") */
-        midi_hint = 0;
+    mf_seen = 0;                                        /* (this pass's MIDI IN notes: seen) */
     if (midi_hint) {                                    /* MIDI notes into a track that is not selected */
         uint32_t h = midi_hint;
         midi_hint = 0;

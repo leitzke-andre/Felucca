@@ -63,8 +63,7 @@ enum {                          /* global parameters */
     G_BPM, G_SWING, G_CLOCK, G_TUNE,
     G_DTIME, G_DFDBK, G_DCOLOR, G_DMIX,
     G_RSIZE, G_RDAMP, G_CRATE, G_CDEPTH,
-    G_MIDI, G_SYNC, G_ROUTE, G_INFO,   /* G_ROUTE: MIDI IN, 0 CH1-4 (channels 1..4 -> parts 1..4, 5..16 ignored), 1 SEL;
-                                        * 1.2: 2..4 CH5-8 CH9-12 CH13-16 (seq.c midi_base); 1.5.5: 5 TRACK (song.mch) */
+    G_MIDI, G_SYNC, G_ROUTE, G_INFO,   /* G_ROUTE: MIDI IN, the channel 0..15 the part hears, 16 OMNI (seq.c midi_slot) */
     G_ENGSEL, G_ENGGO,          /* no page: the editor switches the engine with a SET of G_ENGSEL; G_ENGGO is
                                  * unused (ids are fixed by the formats and the protocol) */
     G_CLRSEQ, G_INITSND,
@@ -211,17 +210,8 @@ typedef struct {
     uint32_t cpu_q8;             /* audio ISR load, 1/256 */
     uint32_t master_q12;
     int32_t batt_raw;            /* smoothed ADC ch3 (battery divider), 0 = not read yet */
-    uint8_t mch[NTRK];           /* 1.5.5 (#202): MIDI IN TRACK (G_ROUTE ROUTE_TRACK), each track's channel as stored: 0..15
-                                  * the channel's distance up from the track's own (track i: channel (i + v) % 16, so 0, the
-                                  * zeroed default, is T1..T4 on channels 1..4), MCH_OMNI (any channel no track has), MCH_OFF
-                                  * (none); mch_get / mch_set. The project's, in FUN10's spare bytes (project.c PROJ_MIDI_OFF);
-                                  * MENU > MIDI > T1..T4 CHANNEL */
 } song_t;
-#define ROUTE_SEL 1
-#define ROUTE_TRACK 5                /* G_ROUTE: TRACK, each track on its own channel (song.mch) */
-#define MCH_OMNI 16u
-#define MCH_OFF 17u
-#define MCH_N 18u                    /* channels 1..16, OMNI, OFF */
+#define ROUTE_OMNI 16                /* G_ROUTE: MIDI IN, the channel 0..15 the part hears, or every channel */
 
 /* WaveStorm: one part (NTRK 1) that everything plays and loops over, in an array of four: Felucca's views that name four
  * tracks (the GLO layer, HOME's levels, the editor's track arguments: not offered in WaveStorm) would read an idle,
@@ -230,13 +220,6 @@ typedef struct {
 static track_t trk[NTRK_ALLOC];
 static song_t song;
 #define TSEL (&trk[song.sel])    /* the selected track */
-/* MIDI IN TRACK: track i's channel 0..15, MCH_OMNI or MCH_OFF (song.mch), and set */
-static inline uint32_t mch_get(uint32_t i)
-{
-    uint32_t v = song.mch[i % NTRK];
-    return v < 16u ? (v + i) & 15u : v < MCH_N ? v : (i & 15u);
-}
-static inline void mch_set(uint32_t i, uint32_t ch) { song.mch[i % NTRK] = (uint8_t)(ch < 16u ? (ch - i) & 15u : ch < MCH_N ? ch : 0u); }
 
 /* SWING of a track's step clock: the track's own plus the global one, at most 100 (#31). The sequencer
  * (seq.c step_samples) and the SLICER (slicer.c sl_enter) both time steps with it. At 100 the even

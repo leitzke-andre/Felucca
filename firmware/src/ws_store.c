@@ -10,7 +10,8 @@
  *     at most one write every AS_GAP_MS, never while a note or the transport runs.
  * There are no projects: user presets hold a sound with its pattern (upreset.c). */
 #define WS_STATE_MAGIC 0x31535357u               /* "WSS1" */
-#define WS_STATE_VER 3u                 /* 2: the step without drum lanes or chance (8 bytes); 3: no project globals */
+#define WS_STATE_VER 4u                 /* 2: the step without drum lanes or chance (8 bytes); 3: no project globals;
+                                         * 4: MIDI IN a channel (was Felucca's blocks of four) */
 
 typedef struct {
     uint32_t magic;

@@ -30,7 +30,9 @@ Each voice plays four corner sources A, B, C, D, blended by an X/Y position:
 - The modulation steers the vector: anything routed to **SHP** moves X and anything routed to **FLT / CUT** moves Y
   (ENV DEST, LFO DEST, the matrix, aftertouch, and a preset's filter envelope amount). There is no filter after the
   mixer in this version; the vector is the tone control.
-- **MIDI:** CC 71 sets X, CC 74 sets Y (channel 1), as well as Felucca's usual CCs (level, pan, envelope, sends).
+- **MIDI:** the part listens on one channel, MENU > MIDI > MIDI IN: CH1 (default) .. CH16, or OMNI (every channel);
+  the keys' notes go out on it too. CC 71 sets X, CC 74 sets Y, as well as Felucca's usual CCs (level, pan, envelope,
+  sends). Felucca's channel blocks (CH1-4 ..), SEL, TRACK, T1..T4 CHANNEL and AUTO SELECT are gone with its tracks.
 
 ## Using it
 
@@ -156,5 +158,6 @@ with one part that borrowing read past the end of it.
   from the knobs, a filter after the mixer, tempo-synced sequence steps, layers.
 - **User presets** keep 16 steps of the 64 (the record format is Felucca's); the free ALGORITHM knob could steer X.
 - **Old Felucca data** on a unit is ignored, not converted: its user presets (other engines) read as empty, its autosave
-  is not WaveStorm's format, and MIDI LEARN maps made with Felucca point at other parameters (the numbers moved).
+  is not WaveStorm's format (an autosave of an earlier WaveStorm build is ignored too: version 4 now), and MIDI LEARN
+  maps made with Felucca point at other parameters (the numbers moved).
   Settings carry over.

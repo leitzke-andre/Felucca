@@ -54,8 +54,6 @@ static uint32_t up_gen;                      /* bumped on every user bank change
 #define ui_rec_prefs (favorites.factory[15][28])
 #define PREF_REC 0xFF00u                       /* (menu_items.c MENU_FLAGS: a bit of ui_rec_prefs, << 8) */
 #define PREF_SCALE_LEDS (0x40u << 8)
-#define PREF_MIDI_FOLLOW (0x80u << 8)          /* 1.5.5 (#208): MENU > MIDI > AUTO SELECT ON, bit 7 of ui_rec_prefs (0 in
-                                                * every older setting = OFF; ui_input.c midi_follow) */
 /* 1.2: three more two-valued MENU settings, bits of another byte no engine uses, saved with the settings; 0 in older
  * settings = today's behaviour (append-only, as ui_prefs): bit 0 DISPLAY > SCOPE MIX (Discussion #165, fx.c scope_mix),
  * bit 1 CONTROL > STEP PREVIEW ON (Discussion #169, ui_input.c step_preview), bit 2 CONTROL > CHORD ENTRY ADD (#155,

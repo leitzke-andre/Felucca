@@ -3,10 +3,9 @@
 /* Keyboard, scale, arpeggiator, sequencer and transport.
  * Everything here runs in the audio ISR, once per CTL-sample block, and
  * ends in trk_note_on / trk_note_off: engines never see where a note came from.
- * Four tracks, one transport: every track's pattern loops on its own LEN / DIV /
- * SWING / GATE (polymeter). The keys play the selected track; MIDI IN by MENU > MIDI > MIDI IN (G_ROUTE):
- * CH1-4 (0) channels 1..4 play parts 1..4, channels 5..16 are ignored (midi_control.c midi_event); SEL (1)
- * every channel the selected track; 1.2: CH5-8, CH9-12, CH13-16 as CH1-4 on those four channels (midi_base). Their CC1 (mod wheel), CC11 (expression) and channel aftertouch go to
+ * One part (WaveStorm), its pattern on its own LEN / DIV / SWING / GATE. The keys play it; MIDI IN by MENU > MIDI >
+ * MIDI IN (G_ROUTE): one channel, CH1..CH16, or OMNI; the other channels are ignored (midi_control.c midi_event).
+ * Its CC1 (mod wheel), CC11 (expression) and channel aftertouch go to
  * the same track's modulation matrix (mod.c; the selected track: the one selected then).
  * A note into an armed track (song.rec) while
  * the transport runs is recorded into its pattern, quantised to its (swung) steps, with its
@@ -59,23 +58,10 @@ static volatile uint8_t midi_seen;       /* 1.5.5 (#208): bit per track, a MIDI 
 
 static uint32_t trk_index(const track_t *t) { return (uint32_t)(t - trk); }
 
-/* MENU > MIDI > MIDI IN (G_ROUTE, up to 1.1.5 GLO > SYSTEM ROUT): the first channel (0..15) of the block of four that
- * plays tracks 1..4, -1 with SEL, -2 with TRACK (each track its own: song.mch). Stored
- * 0 CH1-4, 1 SEL, then (1.2, Discussion #143) 2 CH5-8, 3 CH9-12, 4 CH13-16, (1.5.5, #202) 5 TRACK */
-static int32_t midi_base(void)
-{
-    uint32_t r = (uint32_t)song.g[G_ROUTE];
-    return r == ROUTE_SEL ? -1 : r == ROUTE_TRACK ? -2 : r ? (int32_t)(r - 1u) * 4 : 0;
-}
-/* MIDI channel 0..15 of track i (keys -> MIDI out): its channel in ROUT's block (SEL, CH1-4: 1..4); TRACK its own (OMNI,
- * OFF: as CH1-4) */
-static uint32_t trk_midi_ch(uint32_t i)
-{
-    int32_t b = midi_base();
-    if (b == -2)
-        return mch_get(i) < 16u ? mch_get(i) : i % NTRK;
-    return (b > 0 ? (uint32_t)b : 0u) + i % NTRK;
-}
+/* MENU > MIDI > MIDI IN (G_ROUTE): the channel 0..15 the part hears, or ROUTE_OMNI (every channel). The keys' notes go
+ * out on it (OMNI: channel 1) */
+static uint32_t midi_in_ch(void) { return (uint32_t)clamp(song.g[G_ROUTE], 0, ROUTE_OMNI); }
+static uint32_t trk_midi_ch(uint32_t i) { (void)i; return midi_in_ch() < 16u ? midi_in_ch() : 0u; }
 
 #define ND_NONE 0u                      /* track_t nd_late: nothing latched (seq_tick; else its seq_pos + 1) */
 static void seq_release(track_t *t);
@@ -1039,29 +1025,14 @@ static void seq_tick(track_t *t, uint32_t n)
     }
 }
 
-/* MIDI in: the track a channel plays (0..15): G_ROUTE CH1-4 (0) channels 1..4 their parts (5..16 never get
- * here: midi_event drops them), SEL (1) every channel the selected track; CH5-8 .. CH13-16 (2..4) as CH1-4 on
- * their four channels (midi_base); TRACK (5, 1.5.5) the first track set to the channel, else the first set to OMNI, else
- * none (dropped as a channel outside a block) */
+/* MIDI in: the part plays its channel (MIDI IN), or every channel with OMNI; the others are dropped (midi_event) */
 static uint8_t midi_route;                 /* the G_ROUTE events_block last saw (a change to a block: midi_route_block;
-                                            * MIDI_ROUTE_AGAIN: TRACK's channels changed, the same again) */
-#define MIDI_ROUTE_AGAIN 0xFFu
-static int32_t midi_slot(uint32_t ch)      /* the track channel ch plays, -1 none (and with SEL) */
+                                            * its notes on the channel no longer heard let go) */
+static int32_t midi_slot(uint32_t ch)      /* the track channel ch plays (the part: 0), -1 none */
 {
-    int32_t b = midi_base(), omni = -1;
-    uint32_t i;
-    if (b != -2)
-        return b >= 0 && ch - (uint32_t)b < NPART ? (int32_t)(ch - (uint32_t)b) : -1;
-    for (i = 0; i < NPART; i++) {
-        uint32_t c = mch_get(i);
-        if (c == ch)
-            return (int32_t)i;
-        if (c == MCH_OMNI && omni < 0)
-            omni = (int32_t)i;
-    }
-    return omni;
+    return midi_in_ch() == ROUTE_OMNI || ch == midi_in_ch() ? 0 : -1;
 }
-static int midi_in_block(uint32_t ch) { return midi_slot(ch) >= 0; }   /* ch is heard by a track (never with SEL) */
+static int midi_in_block(uint32_t ch) { return midi_slot(ch) >= 0; }   /* ch is heard */
 static track_t *midi_track(uint32_t ch)
 {
     int32_t k = midi_slot(ch);
@@ -1179,8 +1150,7 @@ static void events_block(uint32_t n)
     }
     if (midi_route != (uint8_t)song.g[G_ROUTE]) {     /* ROUT changed: a block lets go of the other channels */
         midi_route = (uint8_t)song.g[G_ROUTE];
-        if (midi_route != ROUTE_SEL)
-            midi_route_block();
+        midi_route_block();
     }
     pr = panic_req;
     panic_req = 0;

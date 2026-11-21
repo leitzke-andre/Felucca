@@ -268,7 +268,6 @@ static void graph_scale(const track_t *t, uint16_t c)
  * C4) over the keys from the C below its lowest note (two octaves, three for a wide one): its notes THEME, its
  * root's ACCENT, the others RAISE. OFF or a kit: what to do instead */
 static void panel_note(const char *a, const char *b, const char *c);
-static void panel_alert(uint32_t id, const char *a);
 static void graph_chord(const track_t *t, uint16_t c)
 {
     static const uint8_t BLACK[12] = {0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0};

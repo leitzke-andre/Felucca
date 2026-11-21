@@ -187,6 +187,27 @@ int main(void)
     render_ms(100);
     CHECK(t->p[P_E0] == 0 && t->p[P_E1] == 127, "MIDI CC 71 -> X, CC 74 -> Y (X %d, Y %d)", t->p[P_E0], t->p[P_E1]);
 
+    /* ---- MIDI IN: one channel (CH1..CH16) or OMNI; the part hears nothing else */
+    {
+        uint32_t k, n[3];
+        static const struct { int16_t route; uint8_t ch; } R[3] = {{2, 0}, {2, 2}, {ROUTE_OMNI, 9}};
+        for (k = 0; k < 3u; k++) {
+            uint32_t i;
+            song.g[G_ROUTE] = R[k].route;
+            render_ms(50);
+            web_midi(0x90u | R[k].ch, 60, 100);
+            render_ms(60);
+            for (i = 0, n[k] = 0; i < NVOICE; i++)
+                n[k] += t->v[i].active && t->v[i].note == 60;
+            web_midi(0x80u | R[k].ch, 60, 0);
+            render_ms(1500);
+        }
+        song.g[G_ROUTE] = 0;
+        render_ms(50);
+        CHECK(!n[0] && n[1] && n[2] && NELEM(N_ROUTE) == 17u && str_eq(N_ROUTE[ROUTE_OMNI], "OMNI"),
+              "MIDI IN CH3: channel 1 ignored, channel 3 plays; OMNI: channel 10 plays");
+    }
+
     /* ---- the heavy song: STORM PAD, 4-note chords on 16 steps, playing (the part's own LEVEL and ARP back to their
      * defaults first: a sound load keeps them, and the preset test above set them) */
     t->p[P_LEVEL] = TP[P_LEVEL].def;

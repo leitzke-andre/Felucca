@@ -381,12 +381,12 @@ static void __attribute__((noinline)) midi_route_block(void)
 static volatile uint8_t *const mpc_io;
 
 /* Keep the occasional controller/panic dispatch outside the hot rendering loop. Channel voice messages only
- * (realtime and clock are handled in events_block, SysEx never reaches here). With ROUT CH1-4 channels
- * 5..16 are ignored entirely (with CH5-8 .. CH13-16 every channel outside the block): notes, bend, CCs (CC1/11/64, RPN, and the CC120/121/123 panic and reset),
+ * (realtime and clock are handled in events_block, SysEx never reaches here). Every channel but MIDI IN's (none with
+ * OMNI) is ignored entirely: notes, bend, CCs (CC1/11/64, RPN, and the CC120/121/123 panic and reset),
  * channel aftertouch, Program Change, so they stay free for other instruments. */
 static void __attribute__((noinline)) midi_event(uint32_t st, uint32_t ch, uint32_t d1, uint32_t d2)
 {
-    if (song.g[G_ROUTE] != 1 && !midi_in_block(ch))
+    if (!midi_in_block(ch))
         return;
     if (st == 0x90u || st == 0x80u)
         midi_note_event(ch, d1, st == 0x90u ? d2 : 0);
