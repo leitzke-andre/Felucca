@@ -218,6 +218,11 @@ static const uint8_t MIDI_CC_MAP[][2] = {
     {91, P_REV}, {93, P_CHOR}, {94, P_DLY},
 };
 /* per engine (ENGINES[] order): CC74's E index + 1 in the high nibble, CC71's in the low one, 0 = none */
+#if FELUCCA_WS_ONLY
+static const uint8_t MIDI_CC_ENG[NENGINES] = {
+    0x21,                                             /* STORM: CC74 (brightness) Y, CC71 X */
+};
+#else
 static const uint8_t MIDI_CC_ENG[NENGINES] = {
     0x56, 0x00, 0x30, 0x80, 0x50, 0x07, 0x67, 0x00,   /* ANALOG CUT RES, -, PHASE DCW, LOFI TONE, SAMPLE CUT, VOICE Q,
                                                        * TRIO CUT RES, WHEEL - */
@@ -228,7 +233,11 @@ static const uint8_t MIDI_CC_ENG[NENGINES] = {
 #if FELUCCA_ADPCM
     0x00,                                             /* ADPCM - (no filter) */
 #endif
+#if FELUCCA_WAVESTORM
+    0x00, 0x21,                                       /* (14 held for ADPCM), STORM: CC74 Y, CC71 X */
+#endif
 };
+#endif
 /* a CC sets parameter id of track t as a knob would: 0..127 over its range */
 static void midi_cc_set(track_t *t, uint32_t id, uint32_t value)
 {

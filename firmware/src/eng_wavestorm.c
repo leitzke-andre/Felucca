@@ -6,8 +6,9 @@
  *   gA = (1-x)(1-y)   gB = x(1-y)   gC = (1-x)y   gD = xy
  * so X fades A->B (and C->D) and Y fades the top pair into the bottom pair.
  *
- * A corner (WAV A..D) is a single-cycle wave from the band-limited bank (eng_wavestorm_waves.h, tools/gen_wavestorm.py)
- * or one of eight wave sequences (S-CYC .. S-HIT): steps of wave, duration, level, pitch offset and crossfade,
+ * A corner (WAV A..D) is a single-cycle wave from the band-limited bank (tools/gen_wavestorm.py: 16 waves beside Felucca's
+ * engines, eng_wavestorm_waves.h; 48 in the WaveStorm-only build, eng_wavestorm_waves_xl.h, the first 16 the same) or one
+ * of eight wave sequences (S-CYC .. S-HIT, after the waves): steps of wave, duration, level, pitch offset and crossfade,
  * one-shot, looping or ping-pong, restarted with each note.
  *
  * The position: X and Y (the knobs) are the centre; PATH adds a vector envelope, a breakpoint path restarted with
@@ -24,14 +25,17 @@
  * State: s[0] s[1] the smoothed X and Y (Q15), s[2] the path's segment (from | to << 8), s[3] the time in it (ms
  * Q10), s[4] 1 once X and Y are set (0: the first block jumps to the target); per corner the phases and the
  * sequence's step in the part's engine memory (ws_part_t; the host's ENG_MEM, or an array of the engine's own). */
-#include "eng_wavestorm_waves.h"
+#if defined(FELUCCA_WS_ONLY) && FELUCCA_WS_ONLY
+#include "eng_wavestorm_waves_xl.h"   /* WaveStorm alone: 48 waves (the flash the other engines left) */
+#else
+#include "eng_wavestorm_waves.h"      /* beside Felucca's engines: 16 */
+#endif
 
 #define WS_NSEQ 8
 #define WS_NSRC (WS_NWAVES + WS_NSEQ)
-typedef char ws_bank_is_16[WS_NWAVES == 16 ? 1 : -1];   /* N_WS_SRC below names the bank's 16 waves in order */
+typedef char ws_bank_has_16[WS_NWAVES >= 16 ? 1 : -1];   /* WW_* below: the first 16, in every bank */
 static const char *const N_WS_SRC[WS_NSRC + 1] = {
-    "SINE", "TRI", "SAW", "SQR", "PLS25", "PLS10", "ORGAN", "HOLLW", "GLASS", "VOX-A", "VOX-O", "VOX-E", "SYNC", "FOLD",
-    "BUZZ", "DIGI", "S-CYC", "S-ARP", "S-VOX", "S-PWM", "S-SHM", "S-RYT", "S-DIG", "S-HIT", 0};
+    WS_WAVE_NAME_LIST, "S-CYC", "S-ARP", "S-VOX", "S-PWM", "S-SHM", "S-RYT", "S-DIG", "S-HIT", 0};
 enum { WW_SINE, WW_TRI, WW_SAW, WW_SQR, WW_PLS25, WW_PLS10, WW_ORGAN, WW_HOLLW, WW_GLASS, WW_VOXA, WW_VOXO, WW_VOXE,
        WW_SYNC, WW_FOLD, WW_BUZZ, WW_DIGI };
 
@@ -360,14 +364,14 @@ static void ws_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vm
 
 /* name, {X, Y, PATH, RATE, WAV A, WAV B, WAV C, WAV D}, {A D S R}, fenv (moves Y), mono, FX(dist, chorus, delay, reverb),
  * pattern. The bank's map: X dark -> bright, Y smooth -> harsh; A or C keeps the body (a sine- or triangle-like corner) */
-#define WSQ_CYC 16
-#define WSQ_ARP 17
-#define WSQ_VOX 18
-#define WSQ_PWM 19
-#define WSQ_SHM 20
-#define WSQ_RYT 21
-#define WSQ_DIG 22
-#define WSQ_HIT 23
+#define WSQ_CYC (WS_NWAVES + 0)    /* the sequences come after the bank's waves */
+#define WSQ_ARP (WS_NWAVES + 1)
+#define WSQ_VOX (WS_NWAVES + 2)
+#define WSQ_PWM (WS_NWAVES + 3)
+#define WSQ_SHM (WS_NWAVES + 4)
+#define WSQ_RYT (WS_NWAVES + 5)
+#define WSQ_DIG (WS_NWAVES + 6)
+#define WSQ_HIT (WS_NWAVES + 7)
 static const preset_t WS_PRESETS[] = {
     /* showcase: a pad whose four corners each run a sequence, circling slowly */
     {"STORM PAD", {64, 40, 3, 40, WSQ_SHM, WSQ_CYC, WSQ_VOX, WSQ_PWM}, {70, 90, 115, 90}, 0, 0, FX(0, 50, 25, 70), PAT(5)},

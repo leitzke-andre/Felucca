@@ -8,8 +8,24 @@
 #include <stdint.h>
 
 /* ------------------------------------------------------------ sizes --- */
+#ifndef FELUCCA_WS_ONLY
+#define FELUCCA_WS_ONLY 1        /* WaveStorm: STORM (eng_wavestorm.c) is the only engine and there is one part: a
+                                  * playable vector synth with its step sequencer and arpeggiator, effects, the
+                                  * modulation and USB / MIDI; no other engines, song chains or projects. 0 = Felucca
+                                  * with STORM as engine 15 (the wavestorm-claude branch) */
+#endif
+#if FELUCCA_WS_ONLY
+#define FELUCCA_SLICE 0
+#define FELUCCA_ADPCM 0
+#define FELUCCA_FM4 0
+#define FELUCCA_WAVESTORM 1
+#endif
 #define NVOICE 8                 /* voices per part, and the budget shared by all parts */
+#if FELUCCA_WS_ONLY
+#define NPART 1                  /* one synth part */
+#else
 #define NPART 4                  /* synth parts: tracks 1..4 */
+#endif
 #define NTRK NPART               /* tracks (the formats and the protocol count these): every track is a part */
 #define NSTEP 64
 #define HALF_FRAMES 128          /* I2S half buffer: 2.9 ms at 44.1 kHz (a key waits 0..1 half, then plays 1 half later) */
@@ -38,9 +54,16 @@
 #ifndef FELUCCA_WAVESTORM
 #define FELUCCA_WAVESTORM 1      /* WaveStorm: the STORM engine (eng_wavestorm.c, vector synthesis + wave sequencing), engine 15 */
 #endif
-#if FELUCCA_WAVESTORM && !FELUCCA_SLICE
+#if FELUCCA_WAVESTORM && !FELUCCA_SLICE && !FELUCCA_WS_ONLY
 #error "FELUCCA_WAVESTORM needs FELUCCA_SLICE (STORM is engine 15, after SLICE and ADPCM's 14)"
 #endif
+#if FELUCCA_WS_ONLY
+#define ENGI_RES14 0
+#define NENGINES 1               /* STORM alone, engine 0 (the other engines' numbers are not defined: any use left of
+                                  * them is a compile error, not a wrong index) */
+#define ENGI_WAVESTORM 0u
+#define NENG_SHOWN 1
+#else
 #define ENGI_RES14 (FELUCCA_WAVESTORM && !FELUCCA_ADPCM)   /* 14 is held for ADPCM (a placeholder, never offered) */
 #define NENGINES (13 + FELUCCA_SLICE + (FELUCCA_ADPCM || FELUCCA_WAVESTORM) + FELUCCA_WAVESTORM)
                                  /* SLICE (13), then ADPCM (14), STORM (15): the other engines keep their numbers */
@@ -49,6 +72,7 @@
 #define ENGI_DIGITAL 1u          /* reserved without FELUCCA_FM4: never selectable (eng_ok), its sounds load as FM6 */
 #define NENG_SHOWN (NENGINES - !FELUCCA_FM4 - ENGI_RES14)   /* the engines one can pick: PRESETS, the EDIT layer, the editor,
                                                 * in the display order of engines.c ENGINE_ORDER */
+#endif
 #define UP_SLOTS 32u             /* user presets (upreset.c) */
 
 /* ------------------------------------------------------- parameters --- */
@@ -123,6 +147,7 @@ static void params_by_count(int16_t *out, const int16_t *in, uint32_t np, const 
         out[P_E0 + i] = in[nc + i];
 }
 
+#if !FELUCCA_WS_ONLY
 /* engine indices the stores name (engines.c ENGINES[]: append-only) */
 #define ENGI_PHYS 9u
 #define ENGI_DRUM 10u
@@ -158,6 +183,7 @@ static int drum_from_perc(uint32_t engine, int16_t *e)
         e[i] = KIT[i];
     return 1;
 }
+#endif
 
 /* ------------------------------------------------- voices, engines --- */
 enum { V_POLY, V_MONO, V_LEGATO, V_UNISON };   /* P_VOICE */
@@ -262,7 +288,9 @@ typedef struct {
     uint8_t count, rsv[3];
     chain_row_v9_t row[CHAIN_ROWS];
 } chain_v9_t;
+#if !FELUCCA_WS_ONLY   /* (WaveStorm stores no songs: one track, no layout to keep) */
 _Static_assert(sizeof(chain_config_t) == 84u && sizeof(chain_v9_t) == 36u, "song chain layouts (FUN10 / FUN6..FUN9)");
+#endif
 
 typedef struct track {
     int16_t p[P_COUNT];
@@ -374,7 +402,15 @@ typedef struct {
 #define MCH_OFF 17u
 #define MCH_N 18u                    /* channels 1..16, OMNI, OFF */
 
+#if FELUCCA_WS_ONLY
+/* WaveStorm: one part (NTRK 1) that everything plays and loops over, in an array of four: Felucca's views that name four
+ * tracks (the GLO layer, HOME's levels, the editor's track arguments: not offered in WaveStorm) would read an idle,
+ * silent track rather than past the array, should one still be reached */
+#define NTRK_ALLOC 4u
+static track_t trk[NTRK_ALLOC];
+#else
 static track_t trk[NTRK];        /* the instrument: four parts */
+#endif
 static song_t song;
 #define TSEL (&trk[song.sel])    /* the selected track */
 /* MIDI IN TRACK: track i's channel 0..15, MCH_OMNI or MCH_OFF (song.mch), and set */

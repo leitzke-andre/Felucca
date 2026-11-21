@@ -12,7 +12,14 @@
 #define GOY 11                                       /* graphs drawn on a 100 px scale sit at y 11..111 */
 /* the height ADSR and LFO are drawn on: 100 px, or (MENU > LARGE's strip: draw_graph) the strip's ~ 56 */
 static int32_t graph_ht = 100;
-#include "ui_fm6op.c"                                /* EDIT > OPERATOR, OP ENV, OPERATOR 2: FM6's operators (their charts below) */
+#if !FELUCCA_WS_ONLY
+#include "ui_fm6op.c"
+#else
+static int fop_page(uint32_t g) { (void)g; return 0; }   /* (no FM6 operator pages) */
+static uint8_t fop_op, fop_stg;
+static int fop_ok(void) { return 0; }
+static void fop_knob(uint32_t slot, int32_t steps) { (void)slot; (void)steps; }
+#endif                                /* EDIT > OPERATOR, OP ENV, OPERATOR 2: FM6's operators (their charts below) */
 
 /* Matches voice.c: attack is linear, decay and release are exponential
  * (env += (target - env) * k each tick, ~99 % after the set time). Time
@@ -553,6 +560,7 @@ static uint32_t str_hash(uint32_t h, const char *s)
     return h;
 }
 
+#if !FELUCCA_WS_ONLY
 /* One shared, reduced sample display. Decode only in the UI/main loop with a
  * private IMA state, 512 samples per frame; no audio voice state is touched.
  * Cache follows the sample zone, selected note and user-slot generation. */
@@ -628,6 +636,11 @@ static void graph_sample(uint16_t c)
         cv_line(left, 4, left, 90, T_MID); cv_line(right, 4, right, 90, T_MID);
     }
 }
+#else
+static struct { uint32_t pos, key; } sample_wave;      /* (WaveStorm: no SAMPLE, its waveform) */
+static void sample_wave_tick(const track_t *t) { (void)t; }
+static void graph_sample(uint16_t c) { (void)c; }
+#endif
 
 #if FELUCCA_SLICE
 /* SLICES (ui_slice.c): the waveform from the marker before the selected one to the one after it (the selected
@@ -684,6 +697,7 @@ static void graph_slices(void)
 }
 #endif
 
+#if !FELUCCA_WS_ONLY
 /* WHEEL: the nine drawbars as rounded bars over RAISE slots (the bars of the knob just turned: the accent),
  * their footages under them */
 static void graph_wheel(const track_t *t, uint16_t c)
@@ -901,6 +915,11 @@ static void graph_fm6env(const track_t *t, uint16_t c)
     fmt_int(b + str_len(b), op[FP_L1 + sg]);
     cv_text_r(228, 4 - GOY, &AF_S, b, T_TEXT, T_SURF);
 }
+#else
+static void graph_wheel(const track_t *t, uint16_t c) { (void)t; (void)c; }   /* (WaveStorm: no WHEEL, FM6) */
+static void graph_fm6(const track_t *t, uint16_t c, uint32_t sel) { (void)t; (void)c; (void)sel; }
+static void graph_fm6env(const track_t *t, uint16_t c) { (void)t; (void)c; }
+#endif
 
 #if FELUCCA_FM4
 /* DIGITAL's eight algorithms as FM charts, read from src/eng_digital.c's switch (alg) (ui_test.c checks
@@ -2345,7 +2364,9 @@ static void draw_graph(void)
             break;
         default:
             if (pg->scope == SC_ENGINE && ENGINES[t->eng_req % NENGINES] == &ENG_WHEEL) graph_wheel(t, c);
+#if !FELUCCA_WS_ONLY
             else if (pg->scope == SC_ENGINE && ENGINES[t->eng_req % NENGINES] == &ENG_SAMPLE && sample_wave.ready) graph_sample(c);
+#endif
             else if (pg->scope == SC_ENGINE && t->eng_req % NENGINES == ENGI_FM6) graph_fm6(t, c, 6u);   /* EDIT 1 and 2 */
 #if FELUCCA_FM4
             else if ((pg->scope == SC_ENGINE || pg->id[0] == P_FM1_LEVEL) && t->eng_req % NENGINES == ENGI_DIGITAL)

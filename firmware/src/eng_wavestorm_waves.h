@@ -6,7 +6,7 @@
 #define WS_LEVELS 8            /* mip levels: level k keeps harmonics up to 128 >> k */
 #define WS_NWAVES 16
 #define WS_WAVE_LEN 616        /* int16_t a wave: every level and its guard sample */
-static const char *const WS_WAVE_NAMES[WS_NWAVES + 1] = {"SINE", "TRI", "SAW", "SQR", "PLS25", "PLS10", "ORGAN", "HOLLW", "GLASS", "VOX-A", "VOX-O", "VOX-E", "SYNC", "FOLD", "BUZZ", "DIGI", 0};
+#define WS_WAVE_NAME_LIST "SINE", "TRI", "SAW", "SQR", "PLS25", "PLS10", "ORGAN", "HOLLW", "GLASS", "VOX-A", "VOX-O", "VOX-E", "SYNC", "FOLD", "BUZZ", "DIGI"   /* (a list: the engine's names) */
 /* level k of a wave: its samples from WS_LVL_OFF[k], index = phase >> WS_LVL_SH[k] */
 static const uint16_t WS_LVL_OFF[WS_LEVELS] = {0, 257, 386, 451, 484, 517, 550, 583};
 static const uint8_t WS_LVL_SH[WS_LEVELS] = {24, 25, 26, 27, 27, 27, 27, 27};

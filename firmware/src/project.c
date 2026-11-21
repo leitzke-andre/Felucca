@@ -1,5 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
+#if FELUCCA_WS_ONLY
+#include "ws_store.c"                  /* WaveStorm: no projects; the settings, the autosave (ws_store.c) */
+#else
 /* Projects: four slots. The slots live in .noinit RAM: they
  * survive resets and UBOOT entry. With FELUCCA_FLASH (default) every save
  * also goes to flash through storage.c, and an
@@ -1179,7 +1182,9 @@ static void project_load(uint32_t slot)
  * boot (the .noinit copies are garbage after a power-off). */
 #include "settings_persist.c"
 #if FELUCCA_FLASH && FELUCCA_SLICE
-#include "slice_store.c"                          /* SLICE's MAN slices, kept in the user slots */
+#if !FELUCCA_WS_ONLY
+#include "slice_store.c"
+#endif                          /* SLICE's MAN slices, kept in the user slots */
 #endif
 #if FELUCCA_FLASH
 static persist_t persist_saved __attribute__((section(".pool")));
@@ -1450,3 +1455,4 @@ _Static_assert(sizeof(project_store_t) <= ST_PAYLOAD_MAX, "project does not fit 
 _Static_assert(sizeof(persist_t) <= ST_PAYLOAD_MAX, "settings do not fit one flash sector");
 #endif
 #endif /* PROJ_HOST */
+#endif /* !FELUCCA_WS_ONLY */

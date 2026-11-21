@@ -45,7 +45,11 @@ static uint32_t cur_fam(void) { return ui.home ? FAM_HOME : cur_page()->fam; }
 static void at_turn_on(track_t *t)
 {
     if (!t->p[P_ATDST]) {
+#if FELUCCA_WS_ONLY
+        t->p[P_ATDST] = MD_CUT;                         /* (STORM: CUT moves Y) */
+#else
         t->p[P_ATDST] = (int16_t)(t->eng_req % NENGINES == ENGI_DRUM ? MD_DIST : MD_CUT);
+#endif
         t->p[P_ATAMT] = 32;
     }
     ui_message("AT: F3-C5 KEYS ONLY");
@@ -1519,7 +1523,7 @@ static void ui_input(void)
     midi_take();                                        /* (MIDI IN notes: lights, SCREEN WAKE, AUTO SELECT's) */
     midi_pc_poll();                                     /* MIDI Program Change (before fm6_poll: a bank voice) */
     fm6_poll();                                         /* FM6: PTCH turned -> its patch */
-#if !FELUCCA_FM4
+#if !FELUCCA_FM4 && !FELUCCA_WS_ONLY
     for (k = 0; k < NTRK; k++)                          /* a DIGITAL sound any other way (the paths convert it */
         if (trk[k].eng_req == ENGI_DIGITAL)             /* already): FM6 (fm4_convert.c) */
             fm4_track(&trk[k]);

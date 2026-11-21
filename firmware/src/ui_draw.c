@@ -501,6 +501,7 @@ static void span_mod_dst(const card_span_t *sp, int32_t v, char *val)   /* MOD's
 {
     str_cpy(val, mod_dst_name((const track_t *)sp->p, v), 16);
 }
+#if !FELUCCA_WS_ONLY
 static void span_fop(const card_span_t *sp, int32_t v, char *val)       /* FM6's operator pages: card ctx's byte = v */
 {
     const char *l, *u;
@@ -508,6 +509,7 @@ static void span_fop(const card_span_t *sp, int32_t v, char *val)       /* FM6's
     uint32_t ic;
     (void)fop_card_at((uint32_t)sp->ctx, v, &l, val, &u, &r, &ic);
 }
+#endif
 static void card_span_by(void (*fn)(const card_span_t *, int32_t, char *), const void *p, int32_t lo, int32_t hi, int32_t ctx)
 {
     card_span.fn = fn;
@@ -815,6 +817,7 @@ static void sound_name(const track_t *t, char *b)
         up_name(user_of(t), b);
         return;
     }
+#if !FELUCCA_WS_ONLY
     if (t->eng_req == ENGI_FM6) {
         uint32_t tr = (uint32_t)(t - trk) % NTRK, k;
         int32_t s = fm6_slot[tr];
@@ -829,6 +832,7 @@ static void sound_name(const track_t *t, char *b)
                 return;
         }
     }
+#endif
     if (e->npresets)
         str_cpy(b, e->presets[t->preset % e->npresets].name, 16);
 }
@@ -1176,6 +1180,7 @@ static void draw_columns(void)
         return;
     }
 #endif
+#if !FELUCCA_WS_ONLY
     if (fop_page(cur_page()->graph)) {                   /* FM6: OP, then three of its bytes (ui_fm6op.c) */
         for (c = 0; c < 4u; c++) {
             const char *lb, *u;
@@ -1193,6 +1198,7 @@ static void draw_columns(void)
         }
         return;
     }
+#endif
     if (cur_page()->graph == GR_MOD) {                   /* SLOT, then that slot's SRC DST AMT */
         const track_t *t = TSEL;
         uint32_t id = P_M1SRC + 3u * mod_ui_slot;

@@ -88,8 +88,10 @@ static int up_to_v4(up_rec_t *r)                 /* 1 = r is version 4 / 5 (now)
     uint32_t i;
     if (r->ver >= 4u)
         return 1;
+#if !FELUCCA_WS_ONLY
     if (r->ver == 1u && r->engine == ENGI_PHYS)
         return 0;
+#endif
     for (i = 0; i < r->np; i++)
         if ((v[i] = r->p[i]) < -64 || v[i] > 127)
             return 0;
@@ -125,12 +127,18 @@ static void up_set_value(up_rec_t *r, uint32_t k, int16_t v)
 static void up_migrate(up_rec_t *r)
 {
     int16_t e[8]; uint32_t k;
+#if FELUCCA_WS_ONLY
+    (void)e; (void)k; (void)r;                  /* (STORM's records need no migration) */
+    return;
+#endif
     if (!up_valid(r)) return;
     for (k = 0; k < 8u; k++) e[k] = up_value(r, r->np - 8u + k);
+#if !FELUCCA_WS_ONLY
     if (drum_from_phys(r->engine, e) || drum_from_perc(r->engine, e)) {   /* (SAMPLE PERC: see the top) */
         r->engine = ENGI_DRUM;
         for (k = 0; k < 8u; k++) up_set_value(r, r->np - 8u + k, e[k]);
     }
+#endif
 }
 
 static void up_pat_norm(uint8_t *note, uint8_t *flags);
@@ -278,14 +286,22 @@ static void up_values(const up_rec_t *r, int16_t *v)   /* mapped and clamped for
     for (i = 0; i < P_COUNT; i++)
         def[i] = param_desc_of(r->engine, i)->def;
     up_params(r, v, def);
+#if !FELUCCA_WS_ONLY
     if (r->ver == 1u && ENGINES[r->engine] == &ENG_PHYS)   /* (before 1.0: MODEL 2 was DUST) */
         phys_legacy(&v[P_E0]);
+#endif
     for (i = 0; i < P_COUNT; i++)
         v[i] = (int16_t)param_fit(param_desc_of(r->engine, i), v[i]);   /* (a retired KIT: the kit it plays) */
 }
 
+#if !FELUCCA_WS_ONLY
 #include "up_fm6.c"                            /* the FM6 user presets' patches: the same kind of store */
 #include "fm6_vbank.c"                         /* FM6's voice bank (SLOT B1..B32, 1.4.1) */
+#else
+static void upf_boot(void) {}                  /* (no FM6 patches beside the records) */
+static void fvb_boot(void) {}
+static void upf_track_load(track_t *t, uint32_t k) { (void)t; (void)k; }
+#endif
 
 static void up_boot(void)                      /* persist_boot: the banks from flash */
 {
@@ -371,7 +387,11 @@ static void up_auto_name(char *b, uint32_t e, uint32_t k)
 {
     char l[4];
     e %= NENGINES;
+#if FELUCCA_WS_ONLY
+    str_cpy(b, ENGINES[0]->name, 9);
+#else
     str_cpy(b, ENGINES[eng_ok(e) ? e : ENGI_FM6]->name, 9);   /* (a DIGITAL record plays as FM6) */
+#endif
     up_slot_label(l, k);
     str_cpy(b + str_len(b), " ", 2);
     str_cpy(b + str_len(b), l + 1, 3);
@@ -424,11 +444,13 @@ static int up_store_cat(uint32_t k, const char *name, uint32_t cat)
     }
     {
         int rc = up_put(k, &r);                         /* the record first, then its FM6 patch (up_fm6.c) */
+#if !FELUCCA_WS_ONLY
         if ((rc == 0 || rc == 3) && r.engine == ENGI_FM6) {
             int u = upf_store(k, (uint32_t)(TSEL - trk));
             if (u == 2)
                 rc = 2;
         }
+#endif
         return rc;
     }
 }
@@ -449,6 +471,45 @@ static int up_rename_cat(uint32_t k, const char *name, uint32_t cat)
 }
 static int up_rename(uint32_t k, const char *name) { return up_rename_cat(k, name, 0); }
 
+#if FELUCCA_WS_ONLY
+static void up_pat_load(track_t *t, uint32_t k);
+static uint32_t up_pat_rank(uint32_t slot);
+/* WaveStorm: a user preset is the whole part but its mix: slot k -> the sound, the ARP, SCL, CHORD, SLICER and pattern
+ * settings, and the record's 16-step pattern when it holds one (else the steps stay); LEVEL PAN MUTE stay. One undo
+ * (SAVE held) takes it all back. 0 ok, 1 empty */
+static int up_load(uint32_t k)
+{
+    const up_rec_t *r;
+    int16_t v[P_COUNT];
+    uint32_t i, pat;
+    track_t *t = TSEL;
+    if (!up_used(k))
+        return 1;
+    r = up_rec(k);
+    pat = !up_pat_empty(r);
+    up_values(r, v);
+    load_begin(t, UNDO_SOUND | (pat ? UNDO_PAT : 0u));
+    panic_req |= (uint8_t)(1u << song.sel);
+    fm1_irq_off();                                      /* the audio ISR must not see half a sound */
+    t->eng_req = r->engine;
+    for (i = 0; i < P_COUNT; i++)
+        if (i != P_LEVEL && i != P_PAN && i != P_MUTE)
+            t->p[i] = v[i];
+    t->preset = 0;
+    fm1_irq_on();
+    if (pat) {
+        up_pat_load(t, k);                              /* steps 1..16, LEN (at most 16) DIV SWING GATE */
+        pat_sig[trk_index(t)] = steps_sig(t);
+        pat_last[trk_index(t)] = (uint8_t)(NPATTERNS + up_pat_rank(k) + 1u);
+        pat_from[trk_index(t)] = 0;
+    }
+    t->user = (uint8_t)(k + 1u);
+    load_end(t);
+    sync_reload = 1;
+    ui.force = 1;
+    return 0;
+}
+#else
 /* slot k -> the selected part's sound: engine and every parameter except the track's own (param_kept:
  * the mix, ARP, SCL, the pattern parameters, the SLICER). The steps stay: the record's pattern is
  * loaded only from SAVE > PHRASES (up_pat_load). 0 ok, 1 empty */
@@ -464,7 +525,7 @@ static int up_load(uint32_t k)
     up_values(r, v);
     load_begin(t, UNDO_SOUND);                          /* (ui.c: the copy for SAVE held = undo) */
     panic_req |= (uint8_t)(1u << song.sel);
-#if !FELUCCA_FM4
+#if !FELUCCA_FM4 && !FELUCCA_WS_ONLY
     if (r->engine == ENGI_DIGITAL) {                    /* a DIGITAL sound (kept as it was stored): FM6 */
         int16_t p[P_COUNT];
         for (i = 0; i < P_COUNT; i++)
@@ -488,6 +549,7 @@ static int up_load(uint32_t k)
     ui.force = 1;
     return 0;
 }
+#endif
 
 /* the patterns of the user presets (SAVE > PHRASES lists them after the factory ones, ui.c pat_count) */
 static int up_has_pat(uint32_t k) { return up_used(k) && !up_pat_empty(up_rec(k)); }
@@ -538,7 +600,11 @@ static void up_pat_load(track_t *t, uint32_t k)
 }
 
 /* the engine a used slot's sound plays on (a DIGITAL record: FM6, without FELUCCA_FM4) */
+#if FELUCCA_WS_ONLY
+static uint32_t up_engine(uint32_t k) { (void)k; return 0; }
+#else
 static uint32_t up_engine(uint32_t k) { return eng_ok(up_rec(k)->engine) ? up_rec(k)->engine : ENGI_FM6; }
+#endif
 
 static uint32_t up_count(void)                 /* used slots */
 {

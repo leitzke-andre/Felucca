@@ -57,6 +57,7 @@ static void ed_send(void)
 }
 static int32_t ed_rv(const uint8_t *p) { return (int32_t)(p[0] | p[1] << 7) - 8192; }
 
+#if !FELUCCA_WS_ONLY   /* (WaveStorm: no user sample slots) */
 /* ---- user sample slots (eng_sample.c): flash SMP_USER_BASE + k * SMP_USER_SIZE ----
  * BEGIN erases the header sector (the slot is invalid from then on), WRITE fills the data
  * (offset >= 512, erasing each further sector when the write reaches its start), END sends
@@ -122,6 +123,7 @@ static int ed_smp_end(uint32_t k, const uint8_t *a, uint32_t na)
 }
 
 /* the engine byte of DUMP / RELOAD / TRACK */
+#endif
 static uint32_t ed_eng(const track_t *t) { return t->eng_req % NENGINES; }
 
 /* ---- live sync (v2): while the editor WATCHes, device-side changes are pushed.
@@ -349,8 +351,12 @@ static int ed_flash_stop(void)
 }
 
 #include "editor_preferences.c"
+#if !FELUCCA_WS_ONLY   /* (WaveStorm: no projects or samples to back up) */
 #include "editor_backup.c"
+#endif
+#if !FELUCCA_WS_ONLY
 #include "editor_fm6.c"
+#endif
 #include "editor_menu.c"
 #include "editor_learn.c"                    /* 1.5: MIDI LEARN's map (cmds 78, 79) */
 #include "editor_palette.c"                  /* 1.6: CUSTOM, the user's palette (cmds 80, 81) */
@@ -435,13 +441,17 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
     const param_desc_t *d;
     if (!ed_args_ok(cmd, a, na))
         return;
+#if !FELUCCA_WS_ONLY
     if ((cmd >= ED_SMP_BEGIN && cmd <= ED_SMP_INFO) || (cmd >= ED_BACKUP_LIST && cmd <= ED_BACKUP_PUT) ||
         (cmd >= ED_FM6B_BEGIN && cmd <= ED_FM6B_END))
         autosave_hold();                                /* (a transfer: no autosave meanwhile, project.c) */
+#endif
     ed_begin(cmd);
     if (ed_ui_handle(cmd, a, na)) { ed_send(); return; }
+#if !FELUCCA_WS_ONLY
     if (ed_backup_handle(cmd, a, na)) { ed_send(); return; }
     if (ed_fm6_handle(cmd, a, na)) { ed_send(); return; }
+#endif
     if (ed_menu_handle(cmd, a, na)) { ed_send(); return; }
     if (ed_learn_handle(cmd, a, na)) { ed_send(); return; }
     if (ed_palette_handle(cmd, a, na)) { ed_send(); return; }
@@ -477,18 +487,24 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         ed_b(CHAIN_ROWS);                                  /* v6 */
         ed_b(0x55); ed_b(1); ed_b(ed_ui_caps());             /* tagged preferences v1: commands 34..38 */
         ed_b(0x4d); ed_b(1); ed_b(64); ed_b(1);   /* motion + chance v1 (64: what it said before 1.2; 41 01 has the real count) */
+#if !FELUCCA_WS_ONLY   /* (WaveStorm: no backup, no FM6) */
         ed_b(0x42); ed_b(1); ed_b(3); /* bounded full-backup read + restore */
         ed_b(0x46); ed_b(1); ed_b(FM6_NFACTORY); ed_b(0);   /* FM6 patches: cmds 68..71 (no bank since 1.0.3) */
+#endif
         ed_b(0x53); ed_b(1); ed_b(3);   /* live sync: bit 0 WATCH while on keeps the shadow, bit 1 no RELOAD echo */
+#if !FELUCCA_WS_ONLY
         ed_b(0x50); ed_b(1); ed_b(3);   /* FM6 patches v2: bit 0 no bank (SLOT F1..F8, 8 OWN), bit 1 user preset
                                          * patches (FM6 target 3, backup id 9) */
+#endif
         ed_b(0x4E); ed_b(1); ed_b(ED_MENU_N);   /* MENU settings: cmds 72, 73; the items MENU_DESC offers */
         ed_b(0x52); ed_b(1); ed_b(4);   /* RATCH: a step's ratchet (1..4 hits) after its chance */
         ed_b(0x4C); ed_b(1); ed_b(1);   /* 1.1 parameter locks: MOTION ops 5..7, the kinds after the records */
         ed_b(0x41); ed_b(1); ed_b(MOTION_MAX); ed_b(MOTION_MAX >> 7);   /* 1.2: 128 motion records, MOTION op 8 */
         ed_b(0x54); ed_b(1); ed_b(NUDGE_DIV);   /* 1.2: a step's nudge (1/16 step) after its ratchet; LFO 2, QNTZ */
         ed_b(0x57); ed_b(1); ed_b(NTRK);   /* 1.2: song sections with a slot per track (SONG ops 4..7) */
+#if !FELUCCA_WS_ONLY
         ed_b(0x56); ed_b(1); ed_b(FM6_NBANK);   /* 1.4.1: FM6's voice bank (cmds 74..77; SLOT 9..40 = B1..B32) */
+#endif
         ed_b(0x43); ed_b(1); ed_b(ML_N);   /* 1.5: MIDI LEARN's map (cmds 78, 79; editor_learn.c) */
         ed_b(0x4B); ed_b(1); ed_b(NCOND);   /* 1.5.5: a step's condition (1..11) after its nudge */
         ed_b(0x45); ed_b(1); ed_b(ED_PAL_N);   /* 1.6: CUSTOM, the user's palette: 5 colours (cmds 80, 81; editor_palette.c) */
@@ -601,6 +617,7 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         for (i = 0; i < 2u; i++)                           /* then the two edit-page titles */
             ed_str(ENGINES[a[0]]->page_title[i], 8);
         break;
+#if !FELUCCA_WS_ONLY   /* (WaveStorm: no user sample slots: the editor gets no reply) */
     case ED_SMP_BEGIN:                                     /* slot -> slot, rc */
     case ED_SMP_ERASE:
         if (na < 1u || a[0] >= SMP_USER_SLOTS || !flash_ok)
@@ -655,6 +672,7 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
             ed_b(usr_nz[i] ? (h->data_len + 1023u) / 1024u : 0u);
         }
         break;
+#endif
     case ED_UP_LIST: {                                     /* start, count -> start, count, total, per slot: used, engine, name;
                                                             * (1.2) then per slot its category (category.c CAT_*, 0 unused):
                                                             * after the entries, so an older editor stops before them */

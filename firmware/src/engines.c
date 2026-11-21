@@ -12,7 +12,9 @@
  * that runs on across notes and switches stays outside (WHEEL's wheels, GRAIN's random numbers).
  * Sized by the largest, ADPCM when it is built (else PHYS, 3 x SYMP's slot); an engine that needs more than ENG_MEM_PART grows it for
  * every part (x NPART of the pool). Zero-initialised pool section: main.c fm1_cstart clears it. */
-#if FELUCCA_ADPCM
+#if FELUCCA_WS_ONLY
+#define ENG_MEM_PART 512u      /* STORM: 8 voices x 4 corners of sequence state (eng_wavestorm.c ws_part_t) */
+#elif FELUCCA_ADPCM
 #define ENG_MEM_PART 13344u    /* ADPCM: its 192 ms echo line, 8 voices and the DSP (13288 B; the host's pointers 13320) */
 #else
 #define ENG_MEM_PART 12888u
@@ -25,6 +27,77 @@ static uint8_t eng_mem_owner[NPART];       /* engine index + 1 whose state is in
 #define ENG_MEM(p) ((void *)eng_mem[p].b)  /* part p's region (p < NPART) */
 #define ENG_MEM_FITS(name, size) _Static_assert((size) <= ENG_MEM_PART, name " state over ENG_MEM_PART")
 
+#if FELUCCA_WS_ONLY
+#include "eng_wavestorm.c"       /* STORM: WaveStorm's vector synthesis and wave sequencing (MIT), the only engine */
+/* the step format keeps Felucca's eight drum lanes (step_t.hit, the formats, the sequencer's code): with no DRUM
+ * engine nothing sets a hit, so they stay empty; their GM notes and lookup, as eng_drum.c has them */
+static const uint8_t DRUM_LANE_NOTE[NLANE] = {36, 38, 39, 42, 46, 45, 37, 56};
+static uint32_t drum_lane(uint32_t note)
+{
+    uint32_t l;
+    for (l = 0; l < NLANE && DRUM_LANE_NOTE[l] != note; l++)
+        ;
+    return l & (NLANE - 1u);
+}
+static uint8_t drum_mute[NPART];                 /* (the EDIT layer's lane mutes: never set) */
+/* the drum lanes' numbers (drum_voice.c), for the sequencer tools that name them */
+enum { DV_KICK, DV_SNARE, DV_CLAP, DV_HATC, DV_HATO, DV_TOM, DV_RIM, DV_BELL, DV_NLANE };
+/* FM6's state in the shared code (the undo copy keeps a track's patch): a one-byte stand-in, never read as a patch */
+#define FP_SIZE 1u
+static uint8_t fm6_patch[NPART][FP_SIZE + 1u];
+static uint8_t fm6_slot[NPART];
+/* FM6's hooks in the shared code: nothing to do without FM6 */
+static void fm6_track_loaded(const track_t *t) { (void)t; }
+static void fm6_init(void) {}
+static void fm6_poll(void) {}
+#include "ws_compat.c"             /* the other engines, answered as "not this one" (the shared code stays as Felucca's) */
+static const char *drum_lane_name(const track_t *t, uint32_t l)
+{
+    static const char *const N[NLANE] = {"KICK", "SNARE", "CLAP", "HATCL", "HATOP", "TOM", "RIM", "BELL"};
+    (void)t;
+    return N[l & (NLANE - 1u)];
+}
+static const char *drum_lane_abbr(const track_t *t, uint32_t l)
+{
+    static const char *const N[NLANE] = {"BD", "SD", "CP", "CH", "OH", "TM", "RS", "CB"};
+    (void)t;
+    return N[l & (NLANE - 1u)];
+}
+static uint32_t step_lanes(const step_t *s)
+{
+    uint32_t m = 0, i;
+    if (s->time != ST_NOTE)
+        return 0;
+    for (i = 0; i < s->n && i < 4u; i++)
+        m |= 1u << drum_lane(s->note[i]);
+    return m | s->hit;
+}
+static uint32_t step_accents(const step_t *s) { return s->flags & SF_ACCENT ? step_lanes(s) : s->acc & step_lanes(s); }
+/* a step's notes that are a lane's note become that lane's hits (the same note, the same velocity: nothing
+ * sounds different). Other notes (a low tom 41, a crash 49) stay notes, shown on their lane. A step accent
+ * of a step left with hits only becomes the hits' accents. Pattern loads into a DRUM track, projects of
+ * before the grid, the grid's edits */
+static void step_to_grid(step_t *s)
+{
+    uint32_t i, k = 0;
+    if (s->time != ST_NOTE)
+        return;
+    for (i = 0; i < s->n && i < 4u; i++) {
+        uint32_t l = drum_lane(s->note[i]);
+        if (s->note[i] == DRUM_LANE_NOTE[l])
+            s->hit |= (uint8_t)(1u << l);
+        else
+            s->note[k++] = s->note[i];
+    }
+    for (i = k; i < 4u; i++)
+        s->note[i] = 0;
+    s->n = (uint8_t)k;
+    if (!k && (s->flags & SF_ACCENT)) {
+        s->acc |= s->hit;
+        s->flags &= (uint8_t)~SF_ACCENT;
+    }
+}
+#else
 #include "../engines/src/eng_analog.c"   /* Felucca-Engines (MIT): ANALOG LOFI TRIO WHEEL NOISE */
 #include "../engines/src/eng_phase.c"   /* Felucca-Engines (MIT): PHASE */
 #include "../engines/src/eng_lofi.c"
@@ -69,9 +142,13 @@ static const engine_t ENG_RES14 = {
     .knob = {P_E0, P_E1, P_E2, P_REL},
 };
 #endif
+#endif   /* !FELUCCA_WS_ONLY */
 
 /* the editor protocol, user presets and projects store these indices: append, never reorder */
 static const engine_t *const ENGINES[NENGINES] = {
+#if FELUCCA_WS_ONLY
+    &ENG_WAVESTORM,              /* 0: STORM, the only engine */
+#else
     &ENG_ANALOG,                 /* 0 */
 #if FELUCCA_FM4
     &ENG_DIGITAL,                /* 1 (ENGI_DIGITAL) */
@@ -100,6 +177,7 @@ static const engine_t *const ENGINES[NENGINES] = {
 #if FELUCCA_WAVESTORM
     &ENG_WAVESTORM,              /* 15 (ENGI_WAVESTORM; FELUCCA_WAVESTORM=0 builds without it) */
 #endif
+#endif   /* !FELUCCA_WS_ONLY */
 };
 
 /* a track's engine number as an index (the audio paths: a compare, cheaper than % NENGINES; a bad number: 0) */
@@ -130,6 +208,11 @@ static void eng_mem_claim(const track_t *t)
 static uint8_t snd_said[NTRK];   /* per track: the code last said, 0 = none (a project load clears them: said again) */
 static const char *snd_missing(const track_t *t, uint32_t *code)
 {
+#if FELUCCA_WS_ONLY
+    (void)t;
+    (void)code;
+    return 0;                                   /* (STORM plays no samples) */
+#else
     const engine_t *e = ENGINES[eng_idx(t->eng_req)];
     uint32_t si = (uint32_t)t->p[P_E0] % SMP_NALL;
 #if FELUCCA_SLICE
@@ -143,12 +226,16 @@ static const char *snd_missing(const track_t *t, uint32_t *code)
         return 0;
     *code = (e == &ENG_GRAIN ? 32u : 1u) + si % 32u;
     return smp_set_missing(si) ? SMP_ALL_NAMES[si] : 0;
+#endif
 }
 
 /* the order the engines are shown in (PRESETS browsing and its ENG knob, the EDIT layer's keys, the editor's list):
  * engine indices, never DIGITAL's reserved 1 (with FELUCCA_FM4 it follows FM6). The indices stay as they are (the
  * stores and the protocol hold them); only this table orders them */
 static const uint8_t ENGINE_ORDER[NENG_SHOWN] = {
+#if FELUCCA_WS_ONLY
+    0,                           /* STORM */
+#else
     0,                           /* ANALOG */
     12,                          /* FM6 */
 #if FELUCCA_FM4
@@ -166,20 +253,29 @@ static const uint8_t ENGINE_ORDER[NENG_SHOWN] = {
 #if FELUCCA_WAVESTORM
     15,                          /* STORM: after ADPCM, with PRESETS' ENG knob as ADPCM (the white keys keep the 13 above) */
 #endif
+#endif
 };
 
 /* the engines one can pick (engine 1 only with FELUCCA_FM4), in ENGINE_ORDER: eng_ok(e), the n-th of them
  * eng_vis(n), e's place among them eng_rank(e), the next / previous one eng_step(e, dir) (wraps) */
+#if FELUCCA_WS_ONLY
+static int eng_ok(uint32_t e) { return e < NENGINES; }
+#else
 static int eng_ok(uint32_t e)
 {
     return e < NENGINES && (FELUCCA_FM4 || e != ENGI_DIGITAL) && !(ENGI_RES14 && e == ENGI_ADPCM);
 }
+#endif
 static uint32_t eng_vis(uint32_t n) { return ENGINE_ORDER[n % NENG_SHOWN]; }
 static uint32_t eng_rank(uint32_t e)
 {
     uint32_t n;
     if (!eng_ok(e))
+#if FELUCCA_WS_ONLY
+        e = 0;
+#else
         e = ENGI_FM6;                            /* (DIGITAL without FELUCCA_FM4: its sounds play as FM6) */
+#endif
     for (n = 0; n < NENG_SHOWN && ENGINE_ORDER[n] != e; n++)
         ;
     return n < NENG_SHOWN ? n : 0u;
@@ -214,6 +310,16 @@ static const struct {
      {1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0}},
     {"SUB", {36, 0, 0, 0, 0, 0, 0, 36, 0, 0, 34, 0, 0, 0, 0, 0},                   /* 8 low, held */
      {1, T_, T_, T_, 0, 0, 0, 0, 0, 0, 0, T_, T_, T_, 0, 0}},
+#if FELUCCA_WS_ONLY   /* (9..12: melodic lines where Felucca has its SLICE and DRUM patterns; the numbers stay) */
+    {"PULSE", {48, 48, 60, 48, 48, 60, 48, 55, 48, 48, 60, 48, 51, 60, 48, 58},    /* 9 eighths with octaves */
+     {1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0}},
+    {"DRONE", {36, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},                   /* 10 one note, the bar long */
+     {1, T_, T_, T_, T_, T_, T_, T_, T_, T_, T_, T_, T_, T_, T_, 0}},
+    {"CHORDS", {60, 0, 0, 0, 0, 0, 65, 0, 0, 0, 0, 0, 67, 0, 0, 0},                /* 11 slow roots */
+     {1, T_, T_, T_, T_, 0, 1, T_, T_, T_, T_, 0, 1, T_, T_, 0}},
+    {"WALK", {36, 0, 43, 0, 48, 0, 46, 0, 41, 0, 48, 0, 39, 0, 46, 0},             /* 12 a bass walk */
+     {1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0}},
+#else
     /* SLICE (eng_slice.c): note = C4 + slice */
     {"CHOP", {60, 61, 62, 67, 64, 65, 60, 69, 68, 70, 62, 67, 72, 72, 74, 64},     /* 9 16 slices re-ordered */
      {1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0}},
@@ -224,6 +330,7 @@ static const struct {
     /* DRUM (General MIDI: 36 kick, 38 snare, 42 closed / 46 open hi-hat) */
     {"BEAT", {36, 42, 42, 42, 38, 42, 36, 42, 36, 42, 42, 36, 38, 42, 46, 42},     /* 12 */
      {1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0}},
+#endif
     /* 16ths up a C minor arpeggio, twice: the line the ARP presets (RAVE, ARP 8BIT, ARP LEAD) suggest
      * now that the arpeggiator is the track's and a preset no longer switches it on */
     {"ARP", {48, 51, 55, 60, 63, 67, 72, 75, 48, 51, 55, 60, 63, 67, 72, 75},       /* 13 */
@@ -233,6 +340,10 @@ static const struct {
 #define NPATTERNS (sizeof PATTERNS / sizeof PATTERNS[0])
 
 /* the parts at power-on (engine, preset, PATTERNS[n - 1] in the sequencer, 0 = empty: all are): bass, pad, lead, drums */
+#if FELUCCA_WS_ONLY
+static const uint8_t TRK_DEF[NPART][3] = {{ENGI_WAVESTORM, 0, 0}};   /* STORM PAD, no steps */
+#else
 static const uint8_t TRK_DEF[NPART][3] = {{0, 4, 0}, {ENGI_FM6, 4, 0}, {3, 0, 0}, {ENGI_DRUM, 0, 0}}; /* ANALOG ACID,
                                                                        * FM6 PAD (was DIGITAL PAD), LOFI PULSE LD, DRUM KIT */
+#endif
 static uint32_t trk_def_engine(uint32_t i) { return TRK_DEF[i % NPART][0]; }

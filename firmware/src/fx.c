@@ -865,6 +865,9 @@ static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_
  * when built, nothing when retired. An estimate: it only steers the split, the sound does not depend on it */
 #if FELUCCA_CPU2
 static uint16_t part_cost[NTRK];                        /* the last block's, per part */
+#if FELUCCA_WS_ONLY
+static const uint16_t ENG_VCOST[NENGINES] = {148};     /* STORM (STORM PAD: 1187 instructions / sample at 8 notes) */
+#else
 static const uint16_t ENG_VCOST[NENGINES] = {163, FELUCCA_FM4 ? 181 : 0, 162, 67, 70, 174, 144, 143, 189, 309, 113, 134,
                                              181,
 #if FELUCCA_SLICE
@@ -873,7 +876,11 @@ static const uint16_t ENG_VCOST[NENGINES] = {163, FELUCCA_FM4 ? 181 : 0, 162, 67
 #if FELUCCA_ADPCM
                                              168,      /* ADPCM (ORGAN, 1693 instructions / sample at 8 notes) */
 #endif
+#if FELUCCA_WAVESTORM
+                                             0, 148,   /* (14 held for ADPCM), STORM */
+#endif
 };
+#endif
 #endif
 
 /* one synth part into the dry mix and the sends of sm (mx[0]; mx[1] on the second core); a part with no voice sounding costs
