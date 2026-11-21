@@ -12,7 +12,7 @@
  * that runs on across notes and switches stays outside (WHEEL's wheels, GRAIN's random numbers).
  * Sized by the largest, ADPCM when it is built (else PHYS, 3 x SYMP's slot); an engine that needs more than ENG_MEM_PART grows it for
  * every part (x NPART of the pool). Zero-initialised pool section: main.c fm1_cstart clears it. */
-#define ENG_MEM_PART 512u      /* STORM: 8 voices x 4 corners of sequence state (eng_wavestorm.c ws_part_t) */
+#define ENG_MEM_PART 1024u     /* STORM: 8 voices x 4 corners of lane state, 32 bytes each (eng_wavestorm.c ws_part_t) */
 static union {
     uint64_t align;
     uint8_t b[ENG_MEM_PART];

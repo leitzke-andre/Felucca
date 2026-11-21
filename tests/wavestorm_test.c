@@ -30,6 +30,8 @@ typedef struct track {
 } track_t;
 static track_t trk[NPART];
 #include "../firmware/engines/src/dsp.c"
+static uint32_t test_bpm = 120;
+static uint32_t beat_samples(void) { return FS * 60u / test_bpm; }   /* (the host's: a quarter at the tempo) */
 #include "../firmware/src/eng_wavestorm.c"
 
 static const engine_t *const E = &ENG_WAVESTORM;
@@ -338,6 +340,60 @@ static void filter_test(void)
     printf("filter: LP top %d/%d, HP body %d/%d, resonance sweep peak %d\n", d_lp, d_off, p_hp, p_sine, peak);
 }
 
+/* the lanes: S-DRF's lanes of 5, 3 and 4 steps line up again every 60 steps and no sooner; a step with no chance never
+ * plays, one with half the chance about half as often; PING-PONG bounces; ONE-SHOT holds its last step; SYNC's steps
+ * follow the tempo */
+static void lanes_test(void)
+{
+    track_t *t = &trk[3];
+    ws_corner_t c;
+    uint32_t k, w[130], ps[130], lv[130], cnt[4] = {0}, pp[8], period = 0;
+    static const ws_lseq_t Q = {{{1, 0, {68}, {0}}, {4, 0, {0, 1, 2, 3}, {0, 100, 50, 0}}, {3, 0, {64, 65, 66}, {0}},
+                                 {1, 0, {127}, {0}}}, {0}, WS_PINGPONG, 0};
+    uint8_t back = 0;
+    uint32_t rng = 12345u, st = 0;
+    memset(t, 0, sizeof *t);
+    ws_corner_start(t, &c, WS_NWAVES + 8u, 0);        /* S-DRF */
+    for (k = 0; k < 130u; k++) {
+        w[k] = c.idx[WL_WAVE], ps[k] = c.idx[WL_PITCH], lv[k] = c.idx[WL_LEVEL];
+        ws_tick(&WS_SEQS[8], &c);
+    }
+    for (k = 1; k <= 60u && !period; k++)
+        if (w[k] == w[0] && ps[k] == ps[0] && lv[k] == lv[0])
+            period = k;
+    CHECK(period == 60u && w[5] == w[0] && ps[3] == ps[0] && lv[4] == lv[0] && w[1] != w[0],
+          "lanes: S-DRF's 5 x 3 x 4 steps line up every %u (60)", period);
+    for (k = 0; k < 6000u; k++) {                    /* the chances (LOOP): miss 100 never, 50 about half */
+        st = ws_lane_step(&Q.lane[WL_WAVE], st, WS_LOOP, &back, 1u << WL_WAVE, &rng);
+        cnt[st]++;
+    }
+    CHECK(!cnt[1] && cnt[2] > cnt[0] / 4u && cnt[2] < cnt[0] * 3u / 4u && cnt[3] > 0u,
+          "lanes: a step that never plays (0), one at 50 %% (%u against %u)", cnt[2], cnt[0]);
+    back = 0;                                        /* PING-PONG on 3 steps: 0 1 2 1 0 1 2 1 */
+    for (k = 0, st = 0; k < 8u; k++) {
+        pp[k] = st;
+        st = ws_lane_next(&Q.lane[WL_PITCH], st, WS_PINGPONG, &back, 1u << WL_PITCH);
+    }
+    CHECK(pp[0] == 0 && pp[1] == 1 && pp[2] == 2 && pp[3] == 1 && pp[4] == 0 && pp[5] == 1 && pp[6] == 2,
+          "lanes: PING-PONG %u %u %u %u %u %u %u", pp[0], pp[1], pp[2], pp[3], pp[4], pp[5], pp[6]);
+    ws_corner_start(t, &c, WS_NWAVES + 7u, 0);        /* S-HIT: ONE-SHOT */
+    for (k = 0; k < 20u; k++)
+        if (!ws_held(&WS_SEQS[7], &c))
+            ws_tick(&WS_SEQS[7], &c);
+    CHECK(c.idx[WL_TIME] == 3u && c.cw == WW_TRI, "lanes: ONE-SHOT holds its last step (%u)", c.idx[WL_TIME]);
+    ws_corner_start(t, &c, WS_NWAVES + 9u, 0);        /* S-RND: sixteenths of the tempo */
+    test_bpm = 120;
+    k = (uint32_t)ws_dur(&WS_SEQS[9], &c);
+    test_bpm = 60;
+    st = (uint32_t)ws_dur(&WS_SEQS[9], &c);
+    test_bpm = 120;
+    k = (k + 512u) / 1024u;                          /* (ms, rounded: within a sample) */
+    st = (st + 512u) / 1024u;
+    CHECK(k == 125u && st == 250u, "lanes: SYNC 1/16 = %u ms at 120 BPM, %u ms at 60", k, st);
+    printf("lanes: drift period %u, chances %u/%u/%u/%u, ping-pong ok, sync %u ms\n", period, cnt[0], cnt[1], cnt[2],
+           cnt[3], k);
+}
+
 /* the worst case: 8 voices, all four corners sequences mid-crossfade most of the time */
 static void cpu_test(void)
 {
@@ -376,6 +432,7 @@ int main(int argc, char **argv)
     alias_render(dir);
     coverage_test();
     filter_test();
+    lanes_test();
     cpu_test();
     if (fails) {
         printf("FAIL: %d checks\n", fails);

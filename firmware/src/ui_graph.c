@@ -814,20 +814,18 @@ static const voice_t *vx_voice(const track_t *t)      /* the newest voice that h
 }
 static int32_t vx_px(int32_t q) { return VX_X0 + 2 + clamp(q, 0, 32767) * (VX_SQ - 5) / 32767; }   /* Q15 -> x */
 static int32_t vx_py(int32_t q) { return VX_Y0 + 2 + clamp(q, 0, 32767) * (VX_SQ - 5) / 32767; }
-/* corner c's wave: its source's, a sequence's step (the one playing, else its first) */
+/* corner c's wave: its source's, a sequence's WAVE lane now (playing; else its first step) */
 static uint32_t vx_wave(const track_t *t, const voice_t *v, uint32_t c)
 {
-    uint32_t src = ws_src(t, c), step = 0;
-    const ws_seq_t *q;
+    uint32_t src = ws_src(t, c);
     if (src < WS_NWAVES)
         return src;
-    q = &WS_SEQS[src - WS_NWAVES];
     if (v) {
         const ws_corner_t *cn = &WS_PART(t)->v[(uint32_t)(v - t->v) % NVOICE].c[c];
-        if (cn->src == src && cn->step < q->n)
-            step = cn->step;
+        if (cn->src == src)
+            return cn->cw % WS_NWAVES;
     }
-    return q->st[step].wave % WS_NWAVES;
+    return ws_seq(t, src - WS_NWAVES)->lane[WL_WAVE].v[0] % WS_NWAVES;
 }
 /* a corner: its letter and source name above, the wave (one cycle, the bank's full-band level) in its box */
 static void vx_corner(const track_t *t, const voice_t *v, uint32_t c, int32_t g)

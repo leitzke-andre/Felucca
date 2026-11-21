@@ -22,8 +22,12 @@ Each voice plays four corner sources A, B, C, D, blended by an X/Y position:
       X=0       X=1
 ```
 
-- A corner is one of 48 band-limited single-cycle waves, or one of 8 built-in **wave sequences** (steps of wave,
-  duration, level, pitch offset and crossfade; looping, ping-pong or one-shot, restarted on each note).
+- A corner is one of 48 band-limited single-cycle waves, or one of 10 built-in **wave sequences**, restarted on each
+  note. A sequence is four **lanes**, as on the wavestate: TIME (each step's length and the crossfade into it), WAVE,
+  PITCH and LEVEL. Each lane has its own length (1..16 steps) and loop point, so lanes of different lengths drift
+  against each other; TIME's steps clock them all. Every step of every lane has a **probability**: one that misses its
+  roll is skipped. LOOP, PING-PONG or ONE-SHOT; TIME in ms (5 ms .. 7.7 s, scaled by RATE) or, with SYNC, note values
+  of the tempo or the MIDI clock (1/64 .. 2 bars).
 - **PATH** is a vector envelope: a breakpoint path around the X/Y position, restarted on each note. Loops (X-SWP,
   Y-SWP, CIRC, FIG8, BOX, DIAM, WANDR) or one-shots (PLUCK: from the bright corner into the knob position, SWELL).
 - **RATE** scales the speed of the path and of the wave sequences together: 1/8x at 0, 1x at 64, ~8x at 127.
@@ -69,7 +73,8 @@ Each voice plays four corner sources A, B, C, D, blended by an X/Y position:
   METAL SYNC2 SYNC3 FOLD2 PDSAW PDRES DIGI2 DIGI3 GRIT.
 - **Sequences:** S-CYC (slow timbre cycle), S-ARP (octave/fifth steps), S-VOX (vowels), S-PWM (pulse widths,
   ping-pong), S-SHM (shimmer), S-RYT (rhythmic gates), S-DIG (fast digital hops), S-HIT (one-shot attack into a soft
-  body).
+  body), S-DRF (drifting lanes: 5 waves, 3 pitches, 4 levels, back in line every 60 steps), S-RND (sixteenths of the
+  tempo whose waves, pitches and levels play by chance).
 
 ## How it is built
 
@@ -119,10 +124,11 @@ keys, 1..0 the buttons FX SCL ENV LFO EDIT GLO HOME SAVE ARP SEQ, `-` PLAY, `=` 
 `tests/ws_tests.sh` runs:
 
 - the wave bank against its generator; the STORM engine under strict ASan/UBSan (presets, release, X/Y sweeps without
-  clicks, all sources and paths, no aliasing on a rising saw);
+  clicks, all sources and paths, no aliasing on a rising saw, the filter's types and resonance, the lanes' drift,
+  probabilities, ping-pong, one-shot and tempo sync);
 - the whole firmware as the browser demo builds it, under ASan/UBSan: one part, no removed page, every family's button
   opens its pages, a note sounds and releases to silence, user presets with their pattern, the autosave and a damaged
-  one ignored, CC 16 / 17 / 71 / 74, the FILTER page and every TYPE, all 56 sources, a heavy pattern;
+  one ignored, CC 16 / 17 / 71 / 74, the FILTER page and every TYPE, all 58 sources, a heavy pattern;
 - Felucca's own tests of what WaveStorm keeps unchanged: keys and buttons, TRS MIDI (parser, UART DMA, TIMER5
   timestamps), USB audio and its descriptors (20 layouts), flash storage, M-UPGRADE, the update loader (needs the JieLi
   AC79 SDK), the package and the installer, the text renderer, palettes and font spacing (needs Pillow);
@@ -158,7 +164,8 @@ with one part that borrowing read past the end of it.
 - **The bundled web editor** (`web/editor.html`) is Felucca's: it shows four tracks, projects, songs and samples that
   this build does not answer.
 - **On-device editing** of paths and sequences (the design's VECTOR PATH, CORNER and WAVESEQ pages), recording a path
-  from the knobs, wavestate-style lanes with probability, tempo-synced sequence steps, layers.
+  from the knobs, layers. The lanes and their probabilities exist in the engine, but only the built-in sequences use
+  them until sequences can be edited on the device.
 - **User presets** keep 16 steps of the 64 (the record format is Felucca's); the free ALGORITHM knob could steer X.
 - **Old Felucca data** on a unit is ignored, not converted: its user presets (other engines) read as empty, its autosave
   is not WaveStorm's format (an autosave of an earlier WaveStorm build is ignored too: version 5 now), and MIDI LEARN

@@ -115,8 +115,9 @@ int main(void)
     {
         uint32_t src, bad = 0;
         float lo = 1, hi = 0;
-        CHECK(WS_NWAVES == 48u && WS_NSRC == 56u && str_eq(N_WS_SRC[47], "GRIT") && str_eq(N_WS_SRC[48], "S-CYC"),
-              "the 48-wave bank, then the 8 sequences (%u sources)", (unsigned)WS_NSRC);
+        CHECK(WS_NWAVES == 48u && WS_NSRC == 58u && str_eq(N_WS_SRC[47], "GRIT") && str_eq(N_WS_SRC[48], "S-CYC") &&
+              str_eq(N_WS_SRC[57], "S-RND"),
+              "the 48-wave bank, then the 10 sequences (%u sources)", (unsigned)WS_NSRC);
         for (src = 0; src < WS_NSRC; src++) {
             for (i = 0; i < 4u; i++)
                 t->p[P_E4 + i] = (int16_t)src;

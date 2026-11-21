@@ -7,14 +7,18 @@
  * so X fades A->B (and C->D) and Y fades the top pair into the bottom pair.
  *
  * A corner (WAV A..D) is a single-cycle wave from the band-limited bank (tools/gen_wavestorm.py: 48 waves,
- * eng_wavestorm_waves.h) or one of eight wave sequences (S-CYC .. S-HIT, after the waves): steps of wave, duration, level, pitch offset and crossfade,
- * one-shot, looping or ping-pong, restarted with each note.
+ * eng_wavestorm_waves.h) or one of the wave sequences (S-CYC .. S-RND, after the waves), restarted with each note. A
+ * sequence is four lanes, as the wavestate's: TIME (each step's length and the crossfade into it), WAVE, PITCH and
+ * LEVEL, each with its own length (1..16 steps) and loop point, so lanes of different lengths drift against each other.
+ * TIME's steps clock the sequence: at each one every lane moves on a step. Every step of every lane has a chance; one
+ * that misses its roll is skipped (the lane moves on to the next). LOOP, PING-PONG or ONE-SHOT, for every lane; TIME
+ * in ms (x RATE) or, with SYNC, note values of the tempo (beat_samples, the host's).
  *
  * The position: X and Y (the knobs) are the centre; PATH adds a vector envelope, a breakpoint path restarted with
  * each note (loops, or one-shots such as PLUCK and SWELL); RATE scales the speed of the path and of the wave
- * sequences together (1/8x .. 1x at 64 .. ~8x). The host's SHP modulation moves X and its FLT modulation moves Y:
- * ENV DEST SHP / FLT, LFO DEST SHP / FLT, the matrix's SHP / CUT, and a preset's filter envelope amount (fenv) all
- * steer the vector. WAVESTORM has no filter of its own (v1): the vector is its tone control.
+ * sequences together (1/8x .. 1x at 64 .. ~8x; a synced sequence follows the tempo only). The host's SHP modulation
+ * moves X; its FLT modulation (ENV, LFO, the matrix's CUT, a preset's fenv) moves the voice filter's cutoff (ws_filter,
+ * the host's P_FTYPE P_CUT P_RES P_FKEY); the matrix moves X and Y as engine parameters.
  *
  * Cost: everything but the table reads runs once per block (CTL samples): the path, the sequences, the gains, the
  * mip level. A sample reads one interpolated table per sounding source ("tap"): 4 for four static corners, up to 8
@@ -26,11 +30,11 @@
  * sequence's step in the part's engine memory (ws_part_t; the host's ENG_MEM, or an array of the engine's own). */
 #include "eng_wavestorm_waves.h"      /* 48 waves (tools/gen_wavestorm.py) */
 
-#define WS_NSEQ 8
+#define WS_NSEQ 10
 #define WS_NSRC (WS_NWAVES + WS_NSEQ)
 typedef char ws_bank_has_16[WS_NWAVES >= 16 ? 1 : -1];   /* WW_* below: the first 16, in every bank */
 static const char *const N_WS_SRC[WS_NSRC + 1] = {
-    WS_WAVE_NAME_LIST, "S-CYC", "S-ARP", "S-VOX", "S-PWM", "S-SHM", "S-RYT", "S-DIG", "S-HIT", 0};
+    WS_WAVE_NAME_LIST, "S-CYC", "S-ARP", "S-VOX", "S-PWM", "S-SHM", "S-RYT", "S-DIG", "S-HIT", "S-DRF", "S-RND", 0};
 enum { WW_SINE, WW_TRI, WW_SAW, WW_SQR, WW_PLS25, WW_PLS10, WW_ORGAN, WW_HOLLW, WW_GLASS, WW_VOXA, WW_VOXO, WW_VOXE,
        WW_SYNC, WW_FOLD, WW_BUZZ, WW_DIGI };
 
@@ -69,53 +73,79 @@ static const ws_path_t WS_PATHS[] = {
 #define WS_NPATH ((int32_t)NELEM(WS_PATHS))
 
 /* ----------------------------------------------------------- wave sequences --- */
+#define WS_LSTEPS 16
+enum { WL_TIME, WL_WAVE, WL_PITCH, WL_LEVEL, WL_N };
 typedef struct {
-    uint8_t wave;                /* WW_* */
-    int8_t semi;                 /* pitch offset, semitones */
-    uint8_t level;               /* 0..255 */
-    uint8_t pad;
-    uint16_t ms, xf;             /* the step's length; the crossfade into it from the step before (both at 1x) */
-} ws_step_t;
+    uint8_t len, loop;           /* 1..WS_LSTEPS steps; the step LOOP (and PING-PONG) goes back to, 0..len - 1 */
+    uint8_t v[WS_LSTEPS];        /* TIME: a time code (WS_TIME_MS; SYNC: WS_SYNC_Q[v >> 3]), WAVE: a wave of the bank,
+                                  * PITCH: 64 + semitones (40..88: two octaves each way), LEVEL: 0..127 */
+    uint8_t miss[WS_LSTEPS];     /* the chance the step is skipped, 0..100 % (0: it always plays; the PROB the UI shows
+                                  * is 100 - miss) */
+} ws_lane_t;
 enum { WS_ONESHOT, WS_LOOP, WS_PINGPONG };
-typedef struct { const ws_step_t *st; uint8_t n, mode, loop; } ws_seq_t;   /* loop: where WS_LOOP goes back to */
+typedef struct {
+    ws_lane_t lane[WL_N];
+    uint8_t xf[WS_LSTEPS];       /* TIME's steps: the crossfade into the step, % of its length */
+    uint8_t mode;                /* WS_LOOP, WS_PINGPONG or WS_ONESHOT, every lane */
+    uint8_t sync;                /* 0: TIME in ms, times RATE; 1: note values of the tempo */
+} ws_lseq_t;
+/* SYNC's note values, in 1/96 of a beat (a quarter): 1/64 1/32T 1/32 1/16T 1/16 1/8T 1/16D 1/8 1/4T 1/8D 1/4 1/4D
+ * 1/2 1/2D 1 bar 2 bars; TIME's 0..127 spread over them (v >> 3) */
+static const uint16_t WS_SYNC_Q[16] = {6, 8, 12, 16, 24, 32, 36, 48, 64, 72, 96, 144, 192, 288, 384, 768};
+static uint32_t beat_samples(void);   /* the host's: a quarter at the tempo (or the MIDI clock's), samples */
+#define WS_Q10_SMP_Q8 ((1024000u * 256u + FS / 2u) / FS)   /* ms Q10 a sample, Q8 (5944 at 44.1 kHz) */
 
-static const ws_step_t WQ_CYC[] = {   /* a slow timbre cycle */
-    {WW_SAW, 0, 255, 0, 600, 400}, {WW_SQR, 0, 255, 0, 600, 400}, {WW_HOLLW, 0, 255, 0, 600, 400},
-    {WW_TRI, 0, 255, 0, 600, 400}};
-static const ws_step_t WQ_ARP[] = {   /* octave and fifth steps, short crossfades */
-    {WW_SAW, 0, 255, 0, 150, 0}, {WW_SAW, 12, 200, 0, 150, 0}, {WW_SQR, 7, 210, 0, 150, 0},
-    {WW_SAW, 19, 180, 0, 150, 0}};
-static const ws_step_t WQ_VOX[] = {   /* vowels: a-o-e-o */
-    {WW_VOXA, 0, 255, 0, 500, 350}, {WW_VOXO, 0, 255, 0, 500, 350}, {WW_VOXE, 0, 255, 0, 500, 350},
-    {WW_VOXO, 0, 255, 0, 500, 350}};
-static const ws_step_t WQ_PWM[] = {   /* the pulse widths, back and forth */
-    {WW_SQR, 0, 255, 0, 250, 240}, {WW_PLS25, 0, 255, 0, 250, 240}, {WW_PLS10, 0, 255, 0, 250, 240}};
-static const ws_step_t WQ_SHM[] = {   /* shimmer: bright partials an octave up, slowly */
-    {WW_GLASS, 0, 255, 0, 900, 700}, {WW_ORGAN, 12, 190, 0, 900, 700}, {WW_GLASS, 12, 170, 0, 900, 700},
-    {WW_SINE, 0, 255, 0, 900, 700}};
-static const ws_step_t WQ_RYT[] = {   /* rhythm: accents and gaps on sixteenth-ish steps */
-    {WW_SYNC, 0, 255, 0, 125, 0}, {WW_SAW, 0, 90, 0, 125, 0}, {WW_SQR, 12, 200, 0, 125, 0},
-    {WW_SAW, 0, 0, 0, 125, 0}, {WW_SYNC, 0, 230, 0, 125, 0}, {WW_SAW, 7, 120, 0, 125, 0},
-    {WW_DIGI, 0, 210, 0, 125, 0}, {WW_SAW, 0, 0, 0, 125, 0}};
-static const ws_step_t WQ_DIG[] = {   /* digital chatter: fast hops between waves */
-    {WW_DIGI, 0, 255, 0, 60, 0}, {WW_FOLD, 0, 255, 0, 60, 0}, {WW_BUZZ, 0, 200, 0, 60, 0},
-    {WW_SYNC, 12, 230, 0, 60, 0}, {WW_PLS10, 0, 230, 0, 60, 0}, {WW_GLASS, 24, 180, 0, 60, 0}};
-static const ws_step_t WQ_HIT[] = {   /* a one-shot attack: a bright click into a soft body that stays */
-    {WW_BUZZ, 12, 255, 0, 25, 0}, {WW_SYNC, 0, 255, 0, 60, 20}, {WW_SAW, 0, 255, 0, 150, 120},
-    {WW_TRI, 0, 255, 0, 1000, 300}};
-static const ws_seq_t WS_SEQS[WS_NSEQ] = {
-    {WQ_CYC, NELEM(WQ_CYC), WS_LOOP, 0}, {WQ_ARP, NELEM(WQ_ARP), WS_LOOP, 0},
-    {WQ_VOX, NELEM(WQ_VOX), WS_LOOP, 0}, {WQ_PWM, NELEM(WQ_PWM), WS_PINGPONG, 0},
-    {WQ_SHM, NELEM(WQ_SHM), WS_LOOP, 0}, {WQ_RYT, NELEM(WQ_RYT), WS_LOOP, 0},
-    {WQ_DIG, NELEM(WQ_DIG), WS_LOOP, 0}, {WQ_HIT, NELEM(WQ_HIT), WS_ONESHOT, 0},
+#define WL(len, loop, ...) {(len), (loop), {__VA_ARGS__}, {0}}
+#define L4(a) {a, a, a, a}
+#define P_ 64                    /* PITCH: no offset */
+static const ws_lseq_t WS_SEQS[WS_NSEQ] = {
+    {   /* S-CYC: a slow timbre cycle */
+        {WL(4, 0, 83, 83, 83, 83), WL(4, 0, WW_SAW, WW_SQR, WW_HOLLW, WW_TRI), WL(4, 0, P_, P_, P_, P_),
+         WL(4, 0, 127, 127, 127, 127)}, L4(67), WS_LOOP, 0},
+    {   /* S-ARP: octave and fifth steps, short crossfades */
+        {WL(4, 0, 59, 59, 59, 59), WL(4, 0, WW_SAW, WW_SAW, WW_SQR, WW_SAW), WL(4, 0, P_, P_ + 12, P_ + 7, P_ + 19),
+         WL(4, 0, 127, 100, 105, 90)}, {0}, WS_LOOP, 0},
+    {   /* S-VOX: vowels, a-o-e-o */
+        {WL(4, 0, 80, 80, 80, 80), WL(4, 0, WW_VOXA, WW_VOXO, WW_VOXE, WW_VOXO), WL(4, 0, P_, P_, P_, P_),
+         WL(4, 0, 127, 127, 127, 127)}, L4(70), WS_LOOP, 0},
+    {   /* S-PWM: the pulse widths, back and forth */
+        {WL(3, 0, 68, 68, 68), WL(3, 0, WW_SQR, WW_PLS25, WW_PLS10), WL(3, 0, P_, P_, P_), WL(3, 0, 127, 127, 127)},
+        {96, 96, 96}, WS_PINGPONG, 0},
+    {   /* S-SHM: shimmer, bright partials an octave up, slowly */
+        {WL(4, 0, 90, 90, 90, 90), WL(4, 0, WW_GLASS, WW_ORGAN, WW_GLASS, WW_SINE), WL(4, 0, P_, P_ + 12, P_ + 12, P_),
+         WL(4, 0, 127, 95, 85, 127)}, L4(78), WS_LOOP, 0},
+    {   /* S-RYT: rhythm, accents and gaps on sixteenth-ish steps */
+        {WL(8, 0, 56, 56, 56, 56, 56, 56, 56, 56), WL(8, 0, WW_SYNC, WW_SAW, WW_SQR, WW_SAW, WW_SYNC, WW_SAW, WW_DIGI, WW_SAW),
+         WL(8, 0, P_, P_, P_ + 12, P_, P_, P_ + 7, P_, P_), WL(8, 0, 127, 45, 100, 0, 115, 60, 105, 0)}, {0}, WS_LOOP, 0},
+    {   /* S-DIG: digital chatter, fast hops between waves */
+        {WL(6, 0, 43, 43, 43, 43, 43, 43), WL(6, 0, WW_DIGI, WW_FOLD, WW_BUZZ, WW_SYNC, WW_PLS10, WW_GLASS),
+         WL(6, 0, P_, P_, P_, P_ + 12, P_, P_ + 24), WL(6, 0, 127, 127, 100, 115, 115, 90)}, {0}, WS_LOOP, 0},
+    {   /* S-HIT: a one-shot attack, a bright click into a soft body that stays */
+        {WL(4, 0, 28, 43, 59, 92), WL(4, 0, WW_BUZZ, WW_SYNC, WW_SAW, WW_TRI), WL(4, 0, P_ + 12, P_, P_, P_),
+         WL(4, 0, 127, 127, 127, 127)}, {0, 33, 80, 30}, WS_ONESHOT, 0},
+    {   /* S-DRF: drifting lanes, 5 waves over 3 pitches over 4 levels on a steady pulse: they line up again every 60 */
+        {WL(1, 0, 68), WL(5, 0, WW_SAW, WW_GLASS, WW_VOXA, WW_ORGAN, WW_PLS25), WL(3, 0, P_, P_ + 12, P_ + 7),
+         WL(4, 0, 127, 100, 115, 90)}, {60}, WS_LOOP, 0},
+    {   /* S-RND: sixteenths of the tempo whose waves, pitches and levels each play by chance */
+        {WL(8, 0, 32, 32, 32, 32, 32, 32, 32, 32),
+         {8, 0, {WW_SAW, WW_SQR, WW_SYNC, WW_DIGI, WW_SAW, WW_FOLD, WW_PLS25, WW_BUZZ}, {0, 40, 50, 30, 0, 50, 40, 60}},
+         {4, 0, {P_, P_ + 12, P_, P_ + 7}, {0, 50, 0, 60}},
+         {8, 0, {127, 90, 110, 70, 127, 80, 100, 60}, {0, 30, 0, 30, 0, 30, 0, 30}}},
+        L4(10), WS_LOOP, 1},
 };
+#undef P_
 
 /* ----------------------------------------------------------------- the state --- */
 typedef struct {
     uint32_t ph[2];              /* the current step's phase, the step before's (while they crossfade) */
-    int32_t el;                  /* ms (Q10) into the current step */
-    uint8_t step, prev, src;     /* the step, the one before, the source it was started for (WAV A..D) */
-    int8_t dir;                  /* WS_PINGPONG: +1 / -1 */
+    int32_t el;                  /* ms (Q10) into the current TIME step */
+    uint32_t rng;                /* the steps' chances (xorshift32), seeded at the note */
+    uint8_t idx[WL_N];           /* each lane's step */
+    uint8_t back;                /* bit k: lane k runs backwards (PING-PONG) */
+    uint8_t src;                 /* the source it was started for (WAV A..D) */
+    uint8_t xfading, xf;         /* crossfading from the values before; the crossfade, % of the TIME step */
+    uint8_t cw, pw, cl, pl;      /* the wave and LEVEL now, and before (fading out) */
+    int8_t cs, ps;               /* the PITCH now and before, semitones */
 } ws_corner_t;
 typedef struct { ws_corner_t c[4]; } ws_voice_t;
 typedef struct { ws_voice_t v[NVOICE]; } ws_part_t;
@@ -130,13 +160,126 @@ static ws_voice_t *ws_voice(track_t *t, const voice_t *v) { return &WS_PART(t)->
 
 static uint32_t ws_src(const track_t *t, uint32_t c) { return (uint32_t)clamp(t->p[P_E4 + c], 0, WS_NSRC - 1); }
 
-static void ws_corner_start(ws_corner_t *c, uint32_t src, uint32_t ph)
+/* the sequence corner source k (k = src - WS_NWAVES) plays */
+static const ws_lseq_t *ws_seq(const track_t *t, uint32_t k) { (void)t; return &WS_SEQS[k % WS_NSEQ]; }
+
+static uint32_t ws_rand(uint32_t *x)
 {
+    *x ^= *x << 13;
+    *x ^= *x >> 17;
+    *x ^= *x << 5;
+    return *x;
+}
+/* the step after s in lane l (mode: every lane's; bit: the lane's ping-pong direction in *back) */
+static uint32_t ws_lane_next(const ws_lane_t *l, uint32_t s, uint32_t mode, uint8_t *back, uint32_t bit)
+{
+    uint32_t n = (uint32_t)clamp(l->len, 1, WS_LSTEPS), lp = l->loop < n ? l->loop : n - 1u;
+    if (n < 2u)
+        return 0;
+    if (mode == WS_PINGPONG) {
+        if (!(*back & bit) ? s + 1u >= n : s <= lp)
+            *back ^= (uint8_t)bit;
+        if (lp + 1u >= n)                       /* (a loop of one step) */
+            return lp;
+        return *back & bit ? s - 1u : s + 1u;
+    }
+    if (mode == WS_LOOP)
+        return s + 1u < n ? s + 1u : lp;
+    return s + 1u < n ? s + 1u : s;
+}
+/* the lane's next step that plays: the next, skipping those that miss their roll (all of them: the last tried) */
+static uint32_t ws_lane_step(const ws_lane_t *l, uint32_t s, uint32_t mode, uint8_t *back, uint32_t bit, uint32_t *rng)
+{
+    uint32_t k, n = (uint32_t)clamp(l->len, 1, WS_LSTEPS);
+    for (k = 0; k < n; k++) {
+        s = ws_lane_next(l, s, mode, back, bit);
+        if (!l->miss[s] || (ws_rand(rng) >> 8) % 100u >= l->miss[s])
+            break;
+    }
+    return s;
+}
+static uint32_t ws_lane_first(const ws_lane_t *l, uint32_t mode, uint8_t *back, uint32_t bit, uint32_t *rng)
+{
+    if (!l->miss[0] || (ws_rand(rng) >> 8) % 100u >= l->miss[0])
+        return 0;
+    return ws_lane_step(l, 0, mode, back, bit, rng);
+}
+/* the values of the lanes' steps now */
+static void ws_lane_values(const ws_lseq_t *q, ws_corner_t *c)
+{
+    c->cw = (uint8_t)(q->lane[WL_WAVE].v[c->idx[WL_WAVE] % WS_LSTEPS] % WS_NWAVES);
+    c->cs = (int8_t)clamp((int32_t)q->lane[WL_PITCH].v[c->idx[WL_PITCH] % WS_LSTEPS] - 64, -24, 24);
+    c->cl = (uint8_t)(q->lane[WL_LEVEL].v[c->idx[WL_LEVEL] % WS_LSTEPS] & 127u);
+    c->xf = (uint8_t)clamp(q->xf[c->idx[WL_TIME] % WS_LSTEPS], 0, 100);
+}
+/* TIME's step now, ms Q10 */
+static int32_t ws_dur(const ws_lseq_t *q, const ws_corner_t *c)
+{
+    uint32_t v = q->lane[WL_TIME].v[c->idx[WL_TIME] % WS_LSTEPS] & 127u;
+    if (q->sync) {               /* samples (a beat at most 2 s: 30 BPM) x ms Q10 a sample, Q8: fits 32 bits */
+        uint32_t b = (uint32_t)clamp((int32_t)beat_samples(), 1, 2 * FS);
+        return (int32_t)clamp((int32_t)((b * WS_SYNC_Q[v >> 3] / 96u * WS_Q10_SMP_Q8) >> 8), 1024, 1 << 24);
+    }
+    return (int32_t)WS_TIME_MS[v] << 10;
+}
+/* every lane on to its next step (TIME's step is over): the values so far fade out */
+static void ws_tick(const ws_lseq_t *q, ws_corner_t *c)
+{
+    uint32_t k;
+    c->pw = c->cw;
+    c->ps = c->cs;
+    c->pl = c->cl;
+    c->ph[1] = c->ph[0];                         /* (the old step fades out from where it is) */
+    for (k = 0; k < WL_N; k++)
+        c->idx[k] = (uint8_t)ws_lane_step(&q->lane[k], c->idx[k], q->mode, &c->back, 1u << k, &c->rng);
+    ws_lane_values(q, c);
+    c->xfading = c->cw != c->pw || c->cs != c->ps || c->cl != c->pl;
+}
+/* ONE-SHOT: TIME on its last step, held there */
+static int ws_held(const ws_lseq_t *q, const ws_corner_t *c)
+{
+    return q->mode == WS_ONESHOT && c->idx[WL_TIME] + 1u >= (uint32_t)clamp(q->lane[WL_TIME].len, 1, WS_LSTEPS);
+}
+/* the crossfade into the values now at el (ms Q10) of a TIME step dur long: Q15, 32767 = done */
+static int32_t ws_fade(const ws_corner_t *c, int32_t dur, int32_t el)
+{
+    int32_t xf;                  /* (32-bit only: the target has no 64-bit divide) */
+    if (!c->xfading)
+        return 32767;
+    xf = dur / 100 * c->xf;      /* (dur <= 2^24: no overflow) */
+    if (xf < WS_XF_MIN << 10)
+        xf = WS_XF_MIN << 10;
+    if (el >= xf)
+        return 32767;
+    return xf < 32768 ? (el << 15) / xf : el / (xf >> 15);   /* (el < xf: el << 15 fits; else xf >> 15 >= 1) */
+}
+
+static uint32_t ws_seed = 2463534242u;   /* (each note's chances differ) */
+static void ws_corner_start(const track_t *t, ws_corner_t *c, uint32_t src, uint32_t ph)
+{
+    uint32_t k;
     c->ph[0] = c->ph[1] = ph;
     c->el = 0;
-    c->step = c->prev = 0;
-    c->dir = 1;
+    c->back = 0;
+    c->xfading = 0;
     c->src = (uint8_t)src;
+    ws_seed += 0x9E3779B9u;
+    c->rng = (ws_seed ^ (ph * 0x85EBCA6Bu)) | 1u;
+    if (src < WS_NWAVES) {
+        c->cw = c->pw = (uint8_t)src;
+        c->cs = c->ps = 0;
+        c->cl = c->pl = 127;
+        return;
+    }
+    {
+        const ws_lseq_t *q = ws_seq(t, src - WS_NWAVES);
+        for (k = 0; k < WL_N; k++)
+            c->idx[k] = (uint8_t)ws_lane_first(&q->lane[k], q->mode, &c->back, 1u << k, &c->rng);
+        ws_lane_values(q, c);
+        c->pw = c->cw;
+        c->ps = c->cs;
+        c->pl = c->cl;
+    }
 }
 
 static void ws_note_on(track_t *t, voice_t *v)
@@ -144,7 +287,7 @@ static void ws_note_on(track_t *t, voice_t *v)
     ws_voice_t *wv = ws_voice(t, v);
     uint32_t c;
     for (c = 0; c < 4u; c++)     /* every corner on one phase: they blend instead of beating */
-        ws_corner_start(&wv->c[c], ws_src(t, c), v->ph[0]);
+        ws_corner_start(t, &wv->c[c], ws_src(t, c), v->ph[0]);
     v->s[2] = 0 | 1 << 8;        /* the path: from point 0 to point 1 */
     v->s[3] = 0;
     v->s[4] = 0;                 /* X and Y: jump to the first target (a retrigger keeps s[0], s[1], s[4]: glides on) */
@@ -187,29 +330,6 @@ static void ws_path(voice_t *v, uint32_t path, int32_t adv, int32_t *x, int32_t 
     v->s[3] = el;
 }
 
-/* the step after s in q (and the direction for ping-pong) */
-static uint32_t ws_next(const ws_seq_t *q, uint32_t s, int8_t *dir)
-{
-    if (q->n < 2u)
-        return 0;
-    switch (q->mode) {
-    case WS_PINGPONG:
-        if ((*dir > 0 && s + 1u >= q->n) || (*dir < 0 && s == 0))
-            *dir = (int8_t)-*dir;
-        return *dir > 0 ? s + 1u : s - 1u;
-    case WS_LOOP:
-        return s + 1u < q->n ? s + 1u : q->loop;
-    default:
-        return s + 1u < q->n ? s + 1u : s;
-    }
-}
-
-/* the crossfade into the current step at el (ms Q10): Q15, 32767 = done */
-static int32_t ws_fade(const ws_step_t *st, int32_t el)
-{
-    int32_t xf = st->xf > WS_XF_MIN ? st->xf : WS_XF_MIN;
-    return clamp((el << 5) / xf, 0, 32767);
-}
 
 /* the mip level for a phase increment: the first whose harmonics all stay below Nyquist (inc < 2^(24 + k)) */
 static uint32_t ws_level(uint32_t inc)
@@ -297,7 +417,8 @@ static void ws_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vm
     ws_tap_t tap[8];
     int32_t acc[CTL];
     int32_t speed = WS_SPEED_Q8[clamp(p[P_E3], 0, 127)];
-    int32_t adv = (int32_t)((WS_MS_BLK_Q16 * (uint32_t)speed) >> 14);   /* ms Q10 a block */
+    int32_t adv = (int32_t)((WS_MS_BLK_Q16 * (uint32_t)speed) >> 14);   /* ms Q10 a block, at RATE's speed */
+    int32_t adv1 = (int32_t)(WS_MS_BLK_Q16 >> 6);                       /* ms Q10 a block, in real time */
     int32_t px, py, tx, ty, x0, y0, x1, y1, g0[4], g1[4];
     uint32_t c, nt = 0, i;
     ws_path(v, (uint32_t)clamp(p[P_E2], 0, WS_NPATH - 1), adv, &px, &py);
@@ -324,46 +445,41 @@ static void ws_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vm
         ws_corner_t *cn = &wv->c[c];
         uint32_t src = ws_src(t, c);
         if (src != cn->src)                             /* WAV changed under the note: start the corner over */
-            ws_corner_start(cn, src, wv->c[0].ph[0]);
+            ws_corner_start(t, cn, src, wv->c[0].ph[0]);
         if (src < WS_NWAVES) {
             if (g0[c] || g1[c])
                 ws_tap(&tap[nt++], src, &cn->ph[0], m->inc, g0[c], g1[c]);
         } else {
-            const ws_seq_t *q = &WS_SEQS[src - WS_NWAVES];
-            const ws_step_t *st, *pv;
-            int32_t f0, f1, l;
-            if (cn->step >= q->n || cn->prev >= q->n)
-                cn->step = cn->prev = 0;
-            while (!(q->mode == WS_ONESHOT && cn->step + 1u >= q->n)
-                   && cn->el >= (int32_t)(q->st[cn->step].ms ? q->st[cn->step].ms : 1) << 10) {
-                cn->el -= (int32_t)(q->st[cn->step].ms ? q->st[cn->step].ms : 1) << 10;
-                cn->prev = cn->step;
-                cn->step = (uint8_t)ws_next(q, cn->step, &cn->dir);
-                cn->ph[1] = cn->ph[0];                  /* the old step fades out from where it is */
+            const ws_lseq_t *q = ws_seq(t, src - WS_NWAVES);
+            int32_t dur = ws_dur(q, cn), f0, f1, l;
+            while (!ws_held(q, cn) && cn->el >= dur) {
+                cn->el -= dur;
+                ws_tick(q, cn);
+                dur = ws_dur(q, cn);
             }
-            st = &q->st[cn->step];
-            pv = &q->st[cn->prev];
-            f0 = cn->prev == cn->step && cn->el == 0 ? 32767 : ws_fade(st, cn->el);
-            if (cn->step == 0 && cn->prev == 0)
-                f0 = 32767;                             /* the first step of a note: no fade in */
-            cn->el += adv;
-            if (q->mode == WS_ONESHOT && cn->step + 1u >= q->n && cn->el > (1 << 30))
-                cn->el = 1 << 30;                       /* held on the last step: no overflow */
-            f1 = f0 == 32767 ? 32767 : ws_fade(st, cn->el);
-            l = st->level * 128 + (st->level >> 1);    /* 0..255 -> Q15 */
+            f0 = ws_fade(cn, dur, cn->el);
+            cn->el += q->sync ? adv1 : adv;          /* (SYNC: the tempo's time, not RATE's) */
+            if (ws_held(q, cn) && cn->el > dur)
+                cn->el = dur;                           /* held on the last step: no overflow */
+            f1 = ws_fade(cn, dur, cn->el);
+            if (f0 == 32767)
+                f1 = 32767;
+            l = cn->cl * 258;                           /* LEVEL 0..127 -> Q15 */
             if (g0[c] || g1[c]) {
                 int32_t a0 = mulq15(g0[c], l), a1 = mulq15(g1[c], l);
                 if (a0 || a1)
-                    ws_tap(&tap[nt++], st->wave, &cn->ph[0], ws_inc(m, st->semi), mulq15(a0, f0), mulq15(a1, f1));
-                if (f0 < 32767) {                       /* crossfading: the step before, fading out */
-                    int32_t lp = pv->level * 128 + (pv->level >> 1);
+                    ws_tap(&tap[nt++], cn->cw, &cn->ph[0], ws_inc(m, cn->cs), mulq15(a0, f0), mulq15(a1, f1));
+                if (f0 < 32767) {                       /* crossfading: the values before, fading out */
+                    int32_t lp = cn->pl * 258;
                     int32_t b0 = mulq15(mulq15(g0[c], lp), 32767 - f0), b1 = mulq15(mulq15(g1[c], lp), 32767 - f1);
                     if (b0 || b1)
-                        ws_tap(&tap[nt++], pv->wave, &cn->ph[1], ws_inc(m, pv->semi), b0, b1);
+                        ws_tap(&tap[nt++], cn->pw, &cn->ph[1], ws_inc(m, cn->ps), b0, b1);
                 }
             }
-            if (f1 == 32767)
+            if (f1 == 32767) {
                 cn->ph[1] = cn->ph[0];
+                cn->xfading = 0;
+            }
         }
     }
     for (i = 0; i < n; i++)
