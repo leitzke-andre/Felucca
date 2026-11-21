@@ -256,6 +256,7 @@ static void coverage_test(void)
             int32_t peak = 0;
             memset(t, 0, sizeof *t);
             memset(last, 0, sizeof last);
+            ws_sound_default(t);                     /* (SEQ1..4 and USER: a factory sound's copies) */
             t->p[P_E0] = 64, t->p[P_E1] = 64, t->p[P_E2] = (int16_t)path, t->p[P_E3] = 127;
             t->p[P_E4] = t->p[P_E5] = t->p[P_E6] = t->p[P_E7] = (int16_t)src;
             voice_on(t, &t->v[0], 36 + (src * 5u) % 84u);

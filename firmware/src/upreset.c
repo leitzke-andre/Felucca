@@ -267,6 +267,7 @@ static int up_parse(const uint8_t *a, uint32_t na, up_rec_t *r, uint32_t *slot)
 }
 
 #ifndef UP_HOST
+#include "ws_sound.c"            /* WaveStorm: the slots' own paths and sequences, beside the records */
 static void up_values(const up_rec_t *r, int16_t *v)   /* mapped and clamped for its engine */
 {
     int16_t def[P_COUNT];
@@ -401,7 +402,9 @@ static int up_store_cat(uint32_t k, const char *name, uint32_t cat)
     up_pat_from(&r, TSEL->step);
     up_set_cat(&r, cat ? cat : track_cat(TSEL));
     {
-        int rc = up_put(k, &r);                         /* the record first, then its FM6 patch (up_fm6.c) */
+        int rc = up_put(k, &r);                         /* the record first, then its path and sequences (ws_sound.c) */
+        if ((rc == 0 || rc == 3) && ws_snd_save(TSEL, k))
+            rc = 2;
         return rc;
     }
 }
@@ -446,6 +449,7 @@ static int up_load(uint32_t k)
             t->p[i] = v[i];
     t->preset = 0;
     fm1_irq_on();
+    ws_snd_load(t, k);                                  /* WaveStorm: its own path and sequences (ws_sound.c) */
     if (pat) {
         up_pat_load(t, k);                              /* steps 1..16, LEN (at most 16) DIV SWING GATE */
         pat_sig[trk_index(t)] = steps_sig(t);

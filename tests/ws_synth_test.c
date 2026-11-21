@@ -115,9 +115,9 @@ int main(void)
     {
         uint32_t src, bad = 0;
         float lo = 1, hi = 0;
-        CHECK(WS_NWAVES == 48u && WS_NSRC == 58u && str_eq(N_WS_SRC[47], "GRIT") && str_eq(N_WS_SRC[48], "S-CYC") &&
-              str_eq(N_WS_SRC[57], "S-RND"),
-              "the 48-wave bank, then the 10 sequences (%u sources)", (unsigned)WS_NSRC);
+        CHECK(WS_NWAVES == 48u && WS_NSRC == 62u && str_eq(N_WS_SRC[47], "GRIT") && str_eq(N_WS_SRC[48], "S-CYC") &&
+              str_eq(N_WS_SRC[57], "S-RND") && str_eq(N_WS_SRC[58], "SEQ1") && str_eq(N_WS_SRC[61], "SEQ4"),
+              "the 48-wave bank, the 10 built-in sequences, the sound's SEQ1..SEQ4 (%u sources)", (unsigned)WS_NSRC);
         for (src = 0; src < WS_NSRC; src++) {
             for (i = 0; i < 4u; i++)
                 t->p[P_E4 + i] = (int16_t)src;
@@ -180,6 +180,54 @@ int main(void)
               "power-on: the autosave puts the part back (Y 77, its steps)");
         ws_state.sum ^= 1u;                              /* a damaged record is ignored */
         CHECK(!ws_state_ok(&ws_state, sizeof ws_state), "a damaged autosave is ignored");
+    }
+
+    /* ---- the sound's own path and sequences (EDIT > PATH .. SEQ SET): a factory sound's copies, edited with the
+     * pages' knobs, played, kept by a user preset (in flash: the store read back), the undo and the autosave */
+    {
+        static ws_sound_t mine, other;
+        int32_t x0 = WS_PATHS[3].pt[0].x;
+        uint32_t wv;
+        apply_preset_to(t, 0);                           /* STORM PAD: A S-SHM, B S-CYC, C S-VOX, D S-PWM; PATH CIRC */
+        CHECK(!memcmp(&ws_snd[0].seq[0], &WS_SEQS[4], sizeof(ws_lseq_t)) &&
+              !memcmp(&ws_snd[0].seq[1], &WS_SEQS[0], sizeof(ws_lseq_t)) && ws_snd[0].path.n == WS_PATHS[3].n &&
+              ws_snd[0].path.pt[0].x == x0, "a factory sound's own: copies of its corners' sequences and its path");
+        wse.seq = 0, wse.lane = WL_WAVE, wse.step = 0, wse.point = 0;
+        wv = WS_SEQS[4].lane[WL_WAVE].v[0] + 5u;
+        wse_knob(GR_WSPATH, 1, -10);                     /* X of point 1: -20 % */
+        wse_knob(GR_WSSEQ, 2, -2);                       /* WAVE's LEN 4 -> 2 */
+        wse_knob(GR_WSSTEP, 1, 5);                       /* its step 1: five waves on */
+        wse_knob(GR_WSSTEP, 2, -10);                     /* .. PROB 50 % */
+        CHECK(t->p[P_E2] == WS_UPATH && ws_snd[0].path.pt[0].x == x0 - 3280 && ws_snd[0].seq[0].lane[WL_WAVE].len == 2 &&
+              ws_snd[0].seq[0].lane[WL_WAVE].v[0] == wv && ws_snd[0].seq[0].lane[WL_WAVE].miss[0] == 50,
+              "EDIT > PATH / SEQ / STEP: a point's X, a lane's LEN, a step's WAVE and PROB (PATH on USER)");
+        t->p[P_E4] = (int16_t)(WS_NWAVES + WS_NBSEQ);   /* WAV A: SEQ1 */
+        t->p[P_E0] = 0, t->p[P_E1] = 0;                  /* (A alone) */
+        t->p[P_LEVEL] = TP[P_LEVEL].def;
+        t->p[P_AMODE] = TP[P_AMODE].def;
+        web_keys(1u << 12);
+        render_ms(400);
+        CHECK(peak > 0.01f, "SEQ1 on corner A sounds (peak %.3f)", (double)peak);
+        web_keys(0);
+        render_ms(3000);
+        mine = ws_snd[0];
+        CHECK(up_store(1, "MY SEQ") == 0 && up_used(1), "SAVE > USER: U02 with its path and sequences");
+        apply_preset_to(t, 2);                           /* VOX PAD: its own copies replace them */
+        other = ws_snd[0];
+        undo.keep = 0;                                   /* (a new undo copy for the next load: not browsing on) */
+        memset(ws_snd_bank, 0, sizeof ws_snd_bank);
+        ws_snd_boot();                                   /* the store read back from flash */
+        CHECK(memcmp(&other, &mine, sizeof mine) && up_load(1) == 0 && !memcmp(&ws_snd[0], &mine, sizeof mine) &&
+              t->p[P_E4] == WS_NWAVES + WS_NBSEQ, "U02 (from flash) brings them back after another sound");
+        undo_swap();
+        CHECK(!memcmp(&ws_snd[0], &other, sizeof other), "SAVE held (undo): the sound before, with its own");
+        undo_swap();
+        ws_capture(&ws_state);
+        memset(&ws_snd[0], 0, sizeof ws_snd[0]);
+        ws_restore(&ws_state);
+        CHECK(!memcmp(&ws_snd[0], &mine, sizeof mine), "the autosave keeps them");
+        apply_preset_to(t, 0);
+        render_ms(100);
     }
 
     /* ---- MIDI: CC 16 X, CC 17 Y, CC 74 CUTOFF, CC 71 RESONANCE (channel 1: the part) */

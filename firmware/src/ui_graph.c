@@ -478,7 +478,7 @@ static uint32_t graph_signature(void)
     h ^= (uint32_t)pg->graph * 131u + TSEL->eng_req + song.sel * 7777u + ui.page * 1291u;
     if (strip_kind() == SK_TITLE)                    /* MENU > LARGE: the page's title (its engine, its number) */
         return h ^ 0x5A17u;
-    if (pg->graph == GR_NONE || pg->graph == GR_ARP || pg->graph == GR_VECT) h ^= ui.frame / 2u;
+    if (pg->graph == GR_NONE || pg->graph == GR_ARP || pg->graph == GR_VECT || wse_page(pg->graph)) h ^= ui.frame / 2u;
     for (i = 0; i < P_COUNT; i++)
         h = (h ^ (uint32_t)t->p[i]) * 16777619u;
     h ^= (uint32_t)TSEL->preset * 7u + TSEL->user * 257u + up_gen * 7919u + ui.uslot * 104729u +
@@ -845,10 +845,13 @@ static void vx_corner(const track_t *t, const voice_t *v, uint32_t c, int32_t g)
         py = y;
     }
 }
-static void graph_vector(const track_t *t)
+/* path: the one drawn (the sound's PATH; EDIT > PATH: USER); sel: the point being edited (marked, the others dotted),
+ * -1 none */
+static void graph_vector_of(const track_t *t, uint32_t path, int32_t sel)
 {
     const voice_t *v = vx_voice(t);
-    const ws_path_t *pa = &WS_PATHS[clamp(t->p[P_E2], 0, WS_NPATH - 1)];
+    ws_path_t up;
+    const ws_path_t *pa = ws_path_of(t, path, &up);
     int32_t kx = clamp(t->p[P_E0] * 258, 0, 32767), ky = clamp(t->p[P_E1] * 258, 0, 32767);   /* (as ws_render) */
     int32_t x = v ? v->s[0] : kx, y = v ? v->s[1] : ky, g[4], i, cx, cy;
     g[0] = ((32767 - x) * (32767 - y)) >> 15;          /* the gains, as ws_render */
@@ -870,11 +873,19 @@ static void graph_vector(const track_t *t)
             const ws_pt_t *pt = &pa->pt[i < pa->n ? i : pa->loop];
             int32_t qx = vx_px(kx + pt->x), qy = vx_py(ky + pt->y);
             if (i)
-                cv_line(px, py, qx, qy, T_SEL);
+                cv_line(px, py, qx, qy, i < pa->n ? (sel >= 0 ? T_THEME : T_SEL) : T_DIM);   /* (the loop back: DIM) */
             px = qx;
             py = qy;
         }
     }
+    if (sel >= 0)                                      /* EDIT > PATH: its points, the one edited big */
+        for (i = 0; i < pa->n; i++) {
+            int32_t qx = vx_px(kx + pa->pt[i].x), qy = vx_py(ky + pa->pt[i].y);
+            if (i == sel)
+                cv_frame(qx - 4, qy - 4, 9, 9, T_ACCENT);
+            else
+                cv_rect(qx - 1, qy - 1, 3, 3, T_THEME);
+        }
     cx = vx_px(kx);                                    /* the knobs: a cross */
     cy = vx_py(ky);
     cv_rect(cx - 5, cy, 11, 1, T_MID);
@@ -882,6 +893,61 @@ static void graph_vector(const track_t *t)
     cx = vx_px(x);                                     /* the sound: the dot (peach while a note sounds) */
     cy = vx_py(y);
     cv_rrect(cx - 4, cy - 4, 9, 9, 4, v ? T_ACCENT : T_THEME, T_BG);
+}
+static void graph_vector(const track_t *t) { graph_vector_of(t, (uint32_t)clamp(t->p[P_E2], 0, WS_NPATH - 1), -1); }
+
+/* EDIT > SEQ / STEP / SEQ SET: the sequence's four lanes as rows of 16 steps. A step: a bar as high as its value
+ * (PITCH: up or down from the middle), as bright as its chance; past the lane's length a dot. The lane being edited:
+ * its name bright, a tint behind it, the step edited framed; each lane's loop point a tick above it; the steps a
+ * sounding note plays now (the newest voice's first corner on this SEQ) underlined in the accent */
+#define WL_X0 48                                      /* the first step's x, 11 apart */
+#define WL_ROW 29
+static void graph_wslanes(const track_t *t)
+{
+    const ws_lseq_t *q = wse_seq();
+    const voice_t *v = vx_voice(t);
+    const ws_corner_t *cn = 0;
+    uint32_t r, i, c, on = wse_corners(t, wse.seq);
+    if (v && on) {
+        for (c = 0; !(on >> c & 1u); c++)
+            ;
+        cn = &WS_PART(t)->v[(uint32_t)(v - t->v) % NVOICE].c[c];
+        if (cn->src != WS_NWAVES + WS_NBSEQ + wse.seq)
+            cn = 0;
+    }
+    for (r = 0; r < WL_N; r++) {
+        const ws_lane_t *l = &q->lane[r];
+        int32_t y0 = 4 + (int32_t)r * WL_ROW, base = y0 + 23, sel = r == wse.lane;
+        uint32_t n = wse_len(l);
+        if (sel)
+            cv_rect(6, y0, 228, WL_ROW - 3, T_TINT);
+        cv_text(10, y0 + 5, &AF_S, WSE_LANE_N[r], sel ? T_TEXT : T_MID);
+        for (i = 0; i < WS_LSTEPS; i++) {
+            int32_t x = WL_X0 + (int32_t)i * 11, f, h;
+            uint32_t val = l->v[i];
+            uint16_t col = ux_mix(T_DIM, sel ? T_THEME : T_MID, 100 - l->miss[i]);
+            if (i >= n) {
+                cv_rect(x + 4, base - 1, 2, 2, T_LINE);
+                continue;
+            }
+            if (r == WL_PITCH) {                     /* from the middle, up or down */
+                f = clamp((int32_t)val - 64, -24, 24) * 9 / 24;
+                cv_rect(x, base - 10, 9, 1, T_LINE);
+                cv_rect(x, f >= 0 ? base - 10 - f : base - 10, 9, (f >= 0 ? f : -f) + 1, col);
+            } else {
+                f = r == WL_TIME ? (q->sync ? (int32_t)((val & 127u) >> 3) * 1000 / 15 : (int32_t)(val & 127u) * 1000 / 127)
+                    : r == WL_WAVE ? (int32_t)(val % WS_NWAVES) * 1000 / (WS_NWAVES - 1) : (int32_t)(val & 127u) * 1000 / 127;
+                h = 2 + f * 18 / 1000;
+                cv_rect(x, base - h, 9, h, col);
+            }
+            if (i == l->loop % n && (l->loop || q->mode != WS_LOOP))   /* (LOOP from 1: no tick) */
+                cv_rect(x, y0 + 1, 9, 1, T_MID);
+            if (sel && i == wse.step && cur_page()->graph == GR_WSSTEP)
+                cv_frame(x - 1, base - 21, 11, 23, T_ACCENT);
+            if (cn && cn->idx[r] == i)
+                cv_rect(x, base + 2, 9, 2, T_ACCENT);
+        }
+    }
 }
 
 static void draw_graph(void)
@@ -965,6 +1031,17 @@ static void draw_graph(void)
         case GR_VECT:
             cv_oy = 0;
             graph_vector(t);
+            break;
+        case GR_WSPATH:
+        case GR_WSPSET:
+            cv_oy = 0;
+            graph_vector_of(t, WS_UPATH, (int32_t)wse.point);
+            break;
+        case GR_WSSEQ:
+        case GR_WSSTEP:
+        case GR_WSSSET:
+            cv_oy = 0;
+            graph_wslanes(t);
             break;
         default:
             cv_oy = 0;

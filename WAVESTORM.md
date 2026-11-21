@@ -45,7 +45,7 @@ Each voice plays four corner sources A, B, C, D, blended by an X/Y position:
 
 | Button | Pages |
 | --- | --- |
-| EDIT | `VECT`: X, Y, PATH, RATE · `WAVE`: WAV A..D · `FILTER`: TYPE, CUT, RES, KEY · VOICE pages (poly/mono, glide, spread, aftertouch) |
+| EDIT | `VECT`: X, Y, PATH, RATE · `WAVE`: WAV A..D · `FILTER`: TYPE, CUT, RES, KEY · `PATH`, `PATH SET`, `SEQ`, `STEP`, `SEQ SET`: the sound's own path and sequences (below) · VOICE pages (poly/mono, glide, spread, aftertouch) |
 | HOME | the home screen: the vector square (KNOB 1..4: X, Y, PATH, RATE); tapped again OUTPUT (LEVEL PAN SPREAD MUTE), then CLOCK |
 | GLO | CLOCK (tempo, swing, clock source); held: the GLO layer (tap tempo, MIDI LEARN) |
 | SEQ | STEP (the piano roll: notes, ties, rests, accent, slide; a step held and a knob turned: a parameter lock), PATTERN (LEN DIV SWING GATE), AUTOMATION (recorded knob moves, locks, per-step VEL) |
@@ -64,9 +64,11 @@ Each voice plays four corner sources A, B, C, D, blended by an X/Y position:
 - **Presets (17):** STORM PAD, GLASS PAD, VOX PAD, DRIFT PAD, VECT PLUCK, GLASS KEYS, HIT KEYS, VECT BASS, FOLD BASS,
   VECT LEAD, VOX LEAD, SHIMMER, VOWELS, CYCLES, RHYTHM, ARP SEQ, DIGI SEQ. The power-on sound is STORM PAD.
 - **User presets** (32 slots) store the whole part except its mix: the sound, the ARP, SCL and CHORD settings, and the
-  first 16 steps of the pattern with LEN, DIV, SWING and GATE. Loading one brings all of that back (one undo, SAVE
-  held, takes it back); LEVEL, PAN and MUTE stay as they are. A preset saved with no steps leaves the steps alone.
-- **Autosave:** the part as it is (sound, all 64 steps, automation) and the global settings are put back at power-on
+  first 16 steps of the pattern with LEN, DIV, SWING and GATE, and the sound's own path and sequences. Loading one
+  brings all of that back (one undo, SAVE held, takes it back); LEVEL, PAN and MUTE stay as they are. A preset saved
+  with no steps leaves the steps alone.
+- **Autosave:** the part as it is (sound with its own path and sequences, all 64 steps, automation) and the global
+  settings are put back at power-on
   (MENU > SYSTEM > RESTORE LAST, on by default). MENU > SYSTEM > CLEAR ALL starts over (user presets stay).
 - **Waves:** SINE TRI SAW SQR PLS25 PLS10 ORGAN HOLLW GLASS VOX-A VOX-O VOX-E SYNC FOLD BUZZ DIGI, then SAW2 SQR2 PLS40
   PLS05 EVEN ODD3, the single harmonics H2 H3 H4 H5 H6 H8, VOX-I VOX-U CHOIR ORG2 ORG3 REED BRASS STRNG FLUTE CLAV BELL
@@ -76,6 +78,28 @@ Each voice plays four corner sources A, B, C, D, blended by an X/Y position:
   body), S-DRF (drifting lanes: 5 waves, 3 pitches, 4 levels, back in line every 60 steps), S-RND (sixteenths of the
   tempo whose waves, pitches and levels play by chance).
 
+### Editing paths and sequences on the device
+
+Every sound carries its own vector path (PATH **USER**, up to 8 points) and four lane sequences (**SEQ1**..**SEQ4**,
+picked on WAV A..D like the built-in ones). A factory preset fills them with copies of what it plays: its PATH, and
+its corners' sequences (a corner on a plain wave gives S-CYC, S-ARP, S-VOX or S-PWM), so there is always something to
+start from. They are saved in user presets, the autosave and the undo.
+
+| Page | KNOB 1 | KNOB 2 | KNOB 3 | KNOB 4 |
+| --- | --- | --- | --- | --- |
+| `PATH` | POINT 1..n | X (+-100 % around the X knob) | Y | TIME to reach it |
+| `PATH SET` | POINTS 1..8 | LOOP: OFF (one-shot) or a point | FROM: a built-in path, copied in | |
+| `SEQ` | SEQ 1..4 (the corners playing it beside it) | LANE: TIME WAVE PITCH LEVEL | LEN 1..16 | LOOP point |
+| `STEP` | STEP | its value (a length or note value, a wave, semitones, a level) | PROB 0..100 % | XFADE (TIME) |
+| `SEQ SET` | MODE: LOOP PING ONE | SYNC: OFF / ON | FROM: a built-in sequence, copied in | |
+
+- The path pages draw the path in the vector square, the point being edited framed; editing the path puts PATH on
+  USER, so what is edited is what plays.
+- The sequence pages draw the four lanes as rows of 16 steps: a bar as high as the step's value and as bright as its
+  chance, a tick at each lane's loop point, the edited step framed, and the steps a sounding note plays underlined.
+- FROM copies on every detent (turn through the built-ins and hear each); there is no confirmation, but SAVE held
+  undoes a sound load, not an edit, so save what you want to keep to a user preset first.
+
 ## How it is built
 
 | File | What |
@@ -84,6 +108,8 @@ Each voice plays four corner sources A, B, C, D, blended by an X/Y position:
 | `firmware/src/eng_wavestorm_waves.h` | The wave bank: 48 waves with their mip levels, written by `tools/gen_wavestorm.py` from formulas |
 | `firmware/src/engines.c` | The engine table (STORM alone), its memory, the factory patterns, the power-on part |
 | `firmware/src/ws_store.c` | WaveStorm's storage: settings, user presets, the autosave, CLEAR ALL |
+| `firmware/src/ws_sound.c` | The user presets' own paths and sequences, beside their records: 8 flash objects at 0xA0000 (Felucca's sample slots' sectors), mirrored in RAM |
+| `firmware/src/ui_wsedit.c` | EDIT > PATH .. SEQ SET: the knobs; their cards in `ui_draw.c`, their pictures in `ui_graph.c` |
 | `firmware/src/core.h` | One part (`NPART` 1, in a `trk[]` of four as a safety net), STORM as engine 0, the 8-byte step |
 | `firmware/src/params.c`, `upreset.c` | The pages (OUTPUT, CLOCK on GLO, PATTERN on SEQ), user presets with their pattern |
 | `firmware/src/dsp.c` + `firmware/engines/` | Felucca-Engines' shared DSP: the tables and the SVF the voice filter uses |
@@ -163,11 +189,10 @@ with one part that borrowing read past the end of it.
   working.
 - **The bundled web editor** (`web/editor.html`) is Felucca's: it shows four tracks, projects, songs and samples that
   this build does not answer.
-- **On-device editing** of paths and sequences (the design's VECTOR PATH, CORNER and WAVESEQ pages), recording a path
-  from the knobs, layers. The lanes and their probabilities exist in the engine, but only the built-in sequences use
-  them until sequences can be edited on the device.
+- **Recording a path from the knobs**, per-corner tuning, layers; an undo of single edits on the PATH and SEQ pages
+  (SAVE held undoes sound loads only).
 - **User presets** keep 16 steps of the 64 (the record format is Felucca's); the free ALGORITHM knob could steer X.
 - **Old Felucca data** on a unit is ignored, not converted: its user presets (other engines) read as empty, its autosave
-  is not WaveStorm's format (an autosave of an earlier WaveStorm build is ignored too: version 5 now), and MIDI LEARN
+  is not WaveStorm's format (an autosave of an earlier WaveStorm build is ignored too: version 6 now), and MIDI LEARN
   maps made with Felucca point at other parameters (the numbers moved).
   Settings carry over.

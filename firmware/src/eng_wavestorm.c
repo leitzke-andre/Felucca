@@ -30,11 +30,14 @@
  * sequence's step in the part's engine memory (ws_part_t; the host's ENG_MEM, or an array of the engine's own). */
 #include "eng_wavestorm_waves.h"      /* 48 waves (tools/gen_wavestorm.py) */
 
-#define WS_NSEQ 10
+#define WS_NBSEQ 10              /* the built-in sequences (WS_SEQS) */
+#define WS_NUSEQ 4               /* the sound's own, SEQ1..SEQ4 (ws_sound_t: edited on the device, stored with it) */
+#define WS_NSEQ (WS_NBSEQ + WS_NUSEQ)
 #define WS_NSRC (WS_NWAVES + WS_NSEQ)
 typedef char ws_bank_has_16[WS_NWAVES >= 16 ? 1 : -1];   /* WW_* below: the first 16, in every bank */
 static const char *const N_WS_SRC[WS_NSRC + 1] = {
-    WS_WAVE_NAME_LIST, "S-CYC", "S-ARP", "S-VOX", "S-PWM", "S-SHM", "S-RYT", "S-DIG", "S-HIT", "S-DRF", "S-RND", 0};
+    WS_WAVE_NAME_LIST, "S-CYC", "S-ARP", "S-VOX", "S-PWM", "S-SHM", "S-RYT", "S-DIG", "S-HIT", "S-DRF", "S-RND",
+    "SEQ1", "SEQ2", "SEQ3", "SEQ4", 0};
 enum { WW_SINE, WW_TRI, WW_SAW, WW_SQR, WW_PLS25, WW_PLS10, WW_ORGAN, WW_HOLLW, WW_GLASS, WW_VOXA, WW_VOXO, WW_VOXE,
        WW_SYNC, WW_FOLD, WW_BUZZ, WW_DIGI };
 
@@ -63,14 +66,16 @@ static const ws_pt_t WP_WANDR[] = {{-4000, 9000, 700}, {11000, 3000, 500}, {6000
 static const ws_pt_t WP_PLUCK[] = {{16384, 16384, 0}, {0, 0, 350}};
 static const ws_pt_t WP_SWELL[] = {{-16384, -16384, 0}, {0, 0, 2500}};
 static const char *const N_WS_PATH[] = {"OFF", "X-SWP", "Y-SWP", "CIRC", "FIG8", "BOX", "DIAM", "WANDR", "PLUCK",
-                                        "SWELL", 0};
+                                        "SWELL", "USER", 0};   /* (USER: the sound's own, ws_sound_t) */
 static const ws_path_t WS_PATHS[] = {
     {0, 0, 0},
     {WP_XSWP, NELEM(WP_XSWP), 0}, {WP_YSWP, NELEM(WP_YSWP), 0}, {WP_CIRC, NELEM(WP_CIRC), 0},
     {WP_FIG8, NELEM(WP_FIG8), 0}, {WP_BOX, NELEM(WP_BOX), 0}, {WP_DIAM, NELEM(WP_DIAM), 0},
     {WP_WANDR, NELEM(WP_WANDR), 0}, {WP_PLUCK, NELEM(WP_PLUCK), 0xFF}, {WP_SWELL, NELEM(WP_SWELL), 0xFF},
 };
-#define WS_NPATH ((int32_t)NELEM(WS_PATHS))
+#define WS_NBPATH ((int32_t)NELEM(WS_PATHS))   /* the built-in paths; then USER */
+#define WS_NPATH (WS_NBPATH + 1)
+#define WS_UPATH WS_NBPATH
 
 /* ----------------------------------------------------------- wave sequences --- */
 #define WS_LSTEPS 16
@@ -98,7 +103,7 @@ static uint32_t beat_samples(void);   /* the host's: a quarter at the tempo (or 
 #define WL(len, loop, ...) {(len), (loop), {__VA_ARGS__}, {0}}
 #define L4(a) {a, a, a, a}
 #define P_ 64                    /* PITCH: no offset */
-static const ws_lseq_t WS_SEQS[WS_NSEQ] = {
+static const ws_lseq_t WS_SEQS[WS_NBSEQ] = {
     {   /* S-CYC: a slow timbre cycle */
         {WL(4, 0, 83, 83, 83, 83), WL(4, 0, WW_SAW, WW_SQR, WW_HOLLW, WW_TRI), WL(4, 0, P_, P_, P_, P_),
          WL(4, 0, 127, 127, 127, 127)}, L4(67), WS_LOOP, 0},
@@ -135,6 +140,23 @@ static const ws_lseq_t WS_SEQS[WS_NSEQ] = {
 };
 #undef P_
 
+/* -------------------------------------------- the sound's own path and sequences --- */
+/* PATH USER and SEQ1..SEQ4: a part's, edited on the device (the host's EDIT > PATH / SEQ pages), stored with the sound
+ * (user presets, the autosave); a factory preset fills them with copies (ws_sound_default). The audio reads them as
+ * the main loop writes them: every index is bounded where it is read */
+#define WS_UPTS 8
+typedef struct {
+    ws_pt_t pt[WS_UPTS];
+    uint8_t n, loop;             /* 1..WS_UPTS points; the point it loops back to, 0xFF: a one-shot */
+    uint8_t rsv[2];
+} ws_upath_t;
+typedef struct {
+    ws_upath_t path;
+    ws_lseq_t seq[WS_NUSEQ];
+} ws_sound_t;
+static ws_sound_t ws_snd[NPART];
+static ws_sound_t *ws_sound(const track_t *t) { return &ws_snd[(uint32_t)(t - trk) % NPART]; }
+
 /* ----------------------------------------------------------------- the state --- */
 typedef struct {
     uint32_t ph[2];              /* the current step's phase, the step before's (while they crossfade) */
@@ -160,8 +182,48 @@ static ws_voice_t *ws_voice(track_t *t, const voice_t *v) { return &WS_PART(t)->
 
 static uint32_t ws_src(const track_t *t, uint32_t c) { return (uint32_t)clamp(t->p[P_E4 + c], 0, WS_NSRC - 1); }
 
-/* the sequence corner source k (k = src - WS_NWAVES) plays */
-static const ws_lseq_t *ws_seq(const track_t *t, uint32_t k) { (void)t; return &WS_SEQS[k % WS_NSEQ]; }
+/* the sequence corner source k (k = src - WS_NWAVES) plays: a built-in, or the sound's own */
+static const ws_lseq_t *ws_seq(const track_t *t, uint32_t k)
+{
+    return k < WS_NBSEQ ? &WS_SEQS[k] : &ws_sound(t)->seq[(k - WS_NBSEQ) % WS_NUSEQ];
+}
+/* PATH path's points (USER: the sound's own, through *tmp) */
+static const ws_path_t *ws_path_of(const track_t *t, uint32_t path, ws_path_t *tmp)
+{
+    const ws_upath_t *u;
+    if (path < (uint32_t)WS_NBPATH)
+        return &WS_PATHS[path];
+    u = &ws_sound(t)->path;
+    tmp->pt = u->pt;
+    tmp->n = (uint8_t)clamp(u->n, 1, WS_UPTS);
+    tmp->loop = u->loop < tmp->n ? u->loop : 0xFFu;
+    return tmp;
+}
+/* a copy of a built-in path (OFF: a still point at the centre) / sequence, to edit */
+static void ws_path_copy(ws_upath_t *d, uint32_t path)
+{
+    const ws_path_t *pa = &WS_PATHS[path % (uint32_t)WS_NBPATH];
+    uint32_t i;
+    memset(d, 0, sizeof *d);
+    d->n = pa->n ? pa->n : 1u;
+    d->loop = pa->n ? pa->loop : 0u;
+    for (i = 0; i < pa->n && i < WS_UPTS; i++)
+        d->pt[i] = pa->pt[i];
+    if (!pa->n)
+        d->pt[0].ms = 250;
+}
+static void ws_seq_copy(ws_lseq_t *d, uint32_t k) { *d = WS_SEQS[k % WS_NBSEQ]; }
+/* a factory sound's own: its path and its corners' sequences (a plain wave's corner: S-CYC S-ARP S-VOX S-PWM) */
+static void ws_sound_default(const track_t *t)
+{
+    ws_sound_t *u = ws_sound(t);
+    uint32_t c, path = (uint32_t)clamp(t->p[P_E2], 0, WS_NBPATH - 1);
+    ws_path_copy(&u->path, path ? path : 3u);       /* (OFF: CIRC to start from) */
+    for (c = 0; c < WS_NUSEQ; c++) {
+        uint32_t src = (uint32_t)clamp(t->p[P_E4 + c], 0, WS_NSRC - 1);
+        ws_seq_copy(&u->seq[c], src >= WS_NWAVES && src - WS_NWAVES < WS_NBSEQ ? src - WS_NWAVES : c);
+    }
+}
 
 static uint32_t ws_rand(uint32_t *x)
 {
@@ -295,9 +357,8 @@ static void ws_note_on(track_t *t, voice_t *v)
 }
 
 /* the path's offset now (Q15, *x and *y), then advance it by adv (ms Q10) */
-static void ws_path(voice_t *v, uint32_t path, int32_t adv, int32_t *x, int32_t *y)
+static void ws_path(voice_t *v, const ws_path_t *pa, int32_t adv, int32_t *x, int32_t *y)
 {
-    const ws_path_t *pa = &WS_PATHS[path];
     uint32_t from = (uint32_t)v->s[2] & 0xFFu, to = ((uint32_t)v->s[2] >> 8) & 0xFFu, guard = 0;
     int32_t el = v->s[3], ms, f;
     if (!pa->n) {
@@ -421,7 +482,10 @@ static void ws_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vm
     int32_t adv1 = (int32_t)(WS_MS_BLK_Q16 >> 6);                       /* ms Q10 a block, in real time */
     int32_t px, py, tx, ty, x0, y0, x1, y1, g0[4], g1[4];
     uint32_t c, nt = 0, i;
-    ws_path(v, (uint32_t)clamp(p[P_E2], 0, WS_NPATH - 1), adv, &px, &py);
+    {
+        ws_path_t up;
+        ws_path(v, ws_path_of(t, (uint32_t)clamp(p[P_E2], 0, WS_NPATH - 1), &up), adv, &px, &py);
+    }
     tx = clamp(p[P_E0] * 258 + px + (m->shape - (64 << 8)) * 2, 0, 32767);   /* SHP modulation moves X */
     ty = clamp(p[P_E1] * 258 + py, 0, 32767);           /* (Y: the matrix's Y and the PATH; FLT moves the filter) */
     if (!v->s[4]) {

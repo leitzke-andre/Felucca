@@ -723,6 +723,7 @@ static struct {
     int16_t p[P_COUNT];
     step_t step[NSTEP];
     motion_store_t motion_backup; /* one track only, swaps with the shared event pool on undo */
+    ws_sound_t snd;              /* WaveStorm: the sound's own path and sequences (with UNDO_SOUND) */
     uint32_t after;              /* track_sig right after the last load */
     uint32_t pat;                /* pat_sig[] of the copy */
     uint32_t from_h;             /* pat_from_h[], pat_from[] of the copy (the header's slot letter) */
@@ -842,6 +843,7 @@ static void load_begin(track_t *t, uint32_t what)
     undo.user = t->user;
     memcpy(undo.p, t->p, sizeof undo.p);
     memcpy(undo.step, t->step, sizeof undo.step);
+    undo.snd = *ws_sound(t);
     undo.pat = pat_sig[i];
     undo.from = pat_from[i];
     undo.from_h = pat_from_h[i];
@@ -898,6 +900,7 @@ static void edit_undo_take(track_t *t, uint32_t tag, uint32_t what)
     undo.user = t->user;
     memcpy(undo.p, t->p, sizeof undo.p);
     memcpy(undo.step, t->step, sizeof undo.step);
+    undo.snd = *ws_sound(t);
     undo.pat = pat_sig[i];
     undo.from = pat_from[i];
     undo.from_h = pat_from_h[i];
@@ -955,6 +958,11 @@ static void undo_swap(void)
                 t->p[i] = undo.p[i];
                 undo.p[i] = v;
             }
+        {
+            ws_sound_t s = *ws_sound(t);
+            *ws_sound(t) = undo.snd;
+            undo.snd = s;
+        }
     }
     if (undo.what & UNDO_PAT) {
         uint32_t ps = pat_sig[trk_index(t)];
@@ -1126,6 +1134,9 @@ static void apply_preset_to(track_t *t, uint32_t pi)
             t->p[P_DIST + i] = (int16_t)(pr->fx[i] ? pr->fx[i] - 1 : FX_DEF[i]);
     }
     ws_preset_filter(t->p, pi);                       /* WaveStorm: the preset's filter (eng_wavestorm.c) */
+    fm1_irq_off();
+    ws_sound_default(t);                              /* .. its own path and sequences: copies to edit */
+    fm1_irq_on();
     load_end(t);
 }
 
@@ -1462,6 +1473,7 @@ static void track_select(uint32_t i)
 }
 
 #include "ui_events.c"                            /* SEQ > AUTOMATION: locks, events, CHANCE, RATCH as a list (an action page) */
+#include "ui_wsedit.c"                            /* WaveStorm: EDIT > PATH .. SEQ SET, the sound's own path and sequences */
 #include "midi_learn.c"                           /* MIDI LEARN (1.5): GLO + D4, a knob, a CC */
 
 /* ---------------------------------------------------- action pages --- */

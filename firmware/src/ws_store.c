@@ -10,8 +10,9 @@
  *     at most one write every AS_GAP_MS, never while a note or the transport runs.
  * There are no projects: user presets hold a sound with its pattern (upreset.c). */
 #define WS_STATE_MAGIC 0x31535357u               /* "WSS1" */
-#define WS_STATE_VER 5u                 /* 2: the step without drum lanes or chance (8 bytes); 3: no project globals;
-                                         * 4: MIDI IN a channel (was Felucca's blocks of four); 5: the filter */
+#define WS_STATE_VER 6u                 /* 2: the step without drum lanes or chance (8 bytes); 3: no project globals;
+                                         * 4: MIDI IN a channel (was Felucca's blocks of four); 5: the filter;
+                                         * 6: the sound's own path and sequences */
 
 typedef struct {
     uint32_t magic;
@@ -21,6 +22,7 @@ typedef struct {
     int16_t p[P_COUNT];
     step_t step[NSTEP];
     motion_store_t motion;
+    ws_sound_t snd;                              /* the part's own path and sequences (eng_wavestorm.c) */
     uint32_t sum;
 } ws_state_t;
 static ws_state_t ws_state __attribute__((section(".pool")));   /* (the main loop's staging copy) */
@@ -64,6 +66,7 @@ static void ws_capture(ws_state_t *s)
     memcpy(s->step, trk[0].step, sizeof s->step);
     s->motion = motion;
     motion_unguard(f);
+    s->snd = ws_snd[0];
     s->sum = ws_state_sum(s);
 }
 
@@ -96,6 +99,7 @@ static void ws_restore(const ws_state_t *s)
     t->preset = (uint8_t)(s->preset % ENGINES[ENGI_WAVESTORM]->npresets);
     memcpy(t->step, s->step, sizeof t->step);
     ws_steps(t->step);
+    ws_snd[0] = s->snd;
     song.sel = 0;
     fm1_irq_on();
     pat_from_set(0);
@@ -151,6 +155,7 @@ static void persist_boot(void)                    /* before settings_init / pane
             persist_saved = p;
     }
     up_boot();                                     /* user presets */
+    ws_snd_boot();                                 /* .. their paths and sequences (ws_sound.c) */
 #endif
 }
 
@@ -209,6 +214,7 @@ static uint32_t autosave_sig(void)               /* what an autosave would hold,
     h = ws_hash(h, t->step, sizeof t->step);
     for (i = 0; i < G_COUNT; i++)
         h = ws_hash(h, &song.g[i], sizeof song.g[i]);
+    h = ws_hash(h, &ws_snd[0], sizeof ws_snd[0]);
     return ws_hash(h, &motion, sizeof motion);
 }
 

@@ -653,6 +653,10 @@ static void edit_param(uint32_t slot, int32_t steps)
         ev_knob(slot, steps);
         return;
     }
+    if (wse_page(pg->graph)) {                            /* WaveStorm: PATH .. SEQ SET (ui_wsedit.c) */
+        wse_knob(pg->graph, slot, steps);
+        return;
+    }
     if (pg->scope == SC_STEP) {
         step_edit(slot, steps);
         return;

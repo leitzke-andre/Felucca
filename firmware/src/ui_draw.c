@@ -924,6 +924,83 @@ static void engine_columns(void)
     draw_column(2, "FAV", preset_favorite() ? "ON" : "OFF", "", VAL(2u), -1, ICON_X_STAR);
     draw_column(3, "", "", "", T_THEME, -1, ICON_NONE);
 }
+/* WaveStorm: the cards of EDIT > PATH .. SEQ SET (ui_wsedit.c) */
+static void wse_signed(char *b, int32_t v) { b[0] = '+'; fmt_int(b + (v > 0), v); }
+static void wse_columns(uint32_t g)
+{
+    char a[12], b[12], u2[8];
+    const char *u = "";
+    const ws_upath_t *pa = wse_path();
+    const ws_lseq_t *q = wse_seq();
+    const ws_lane_t *l = wse_lane();
+    uint32_t n;
+    wse_fix();
+    if (g == GR_WSPATH) {
+        const ws_pt_t *pt = &pa->pt[wse.point % WS_UPTS];
+        n = wse_npts();
+        fmt_int(a, wse.point + 1);
+        str_cpy(u2, "/", sizeof u2);
+        fmt_int(u2 + 1, (int32_t)n);
+        draw_column(0, "POINT", a, u2, VAL(0u), n > 1u ? (int32_t)(wse.point * 1000u / (n - 1u)) : 0, ICON_AUTO);
+        wse_signed(b, pt->x * 100 / 16384);
+        draw_column(1, "X", b, "%", VAL(1u), (pt->x + 16384) * 1000 / 32768, ICON_AUTO);
+        wse_signed(b, pt->y * 100 / 16384);
+        draw_column(2, "Y", b, "%", VAL(2u), (pt->y + 16384) * 1000 / 32768, ICON_AUTO);
+        wse_ms(b, &u, pt->ms);
+        draw_column(3, "TIME", b, u, VAL(3u), (int32_t)wse_time_code(pt->ms) * 1000 / 127, ICON_AUTO);
+    } else if (g == GR_WSPSET) {
+        n = wse_npts();
+        fmt_int(a, (int32_t)n);
+        draw_column(0, "POINTS", a, "", VAL(0u), (int32_t)(n - 1u) * 1000 / (WS_UPTS - 1), ICON_AUTO);
+        if (pa->loop == 0xFFu || pa->loop >= n)
+            str_cpy(b, "OFF", sizeof b);
+        else
+            fmt_int(b, pa->loop + 1);
+        draw_column(1, "LOOP", b, "", VAL(1u), -1, ICON_AUTO);
+        draw_column(2, "FROM", wse.from_p ? N_WS_PATH[wse.from_p] : "--", "", wse.from_p ? VAL(2u) : T_DIM, -1, ICON_AUTO);
+        draw_column(3, "", "", "", T_THEME, -1, ICON_NONE);
+    } else if (g == GR_WSSEQ) {
+        uint32_t on = wse_corners(TSEL, wse.seq), c, k = 0;
+        for (c = 0; c < 4u; c++)                     /* the corners that play it, "A C", or "--" */
+            if (on >> c & 1u) {
+                if (k)
+                    u2[k++] = ' ';
+                u2[k++] = (char)('A' + c);
+            }
+        u2[k] = 0;
+        draw_column(0, "SEQ", N_WS_SRC[WS_NWAVES + WS_NBSEQ + wse.seq], on ? u2 : "--", VAL(0u),
+                    (int32_t)wse.seq * 1000 / (WS_NUSEQ - 1), ICON_AUTO);
+        draw_column(1, "LANE", WSE_LANE_N[wse.lane % WL_N], "", VAL(1u), -1, ICON_AUTO);
+        n = wse_len(l);
+        fmt_int(a, (int32_t)n);
+        draw_column(2, "LEN", a, "", VAL(2u), (int32_t)(n - 1u) * 1000 / (WS_LSTEPS - 1), ICON_AUTO);
+        fmt_int(b, l->loop % n + 1);
+        draw_column(3, "LOOP", b, "", VAL(3u), -1, ICON_AUTO);
+    } else if (g == GR_WSSTEP) {
+        uint32_t k = wse.step % WS_LSTEPS;
+        n = wse_len(l);
+        fmt_int(a, (int32_t)k + 1);
+        str_cpy(u2, "/", sizeof u2);
+        fmt_int(u2 + 1, (int32_t)n);
+        draw_column(0, "STEP", a, u2, VAL(0u), n > 1u ? (int32_t)(k * 1000u / (n - 1u)) : 0, ICON_AUTO);
+        wse_step_value(q, wse.lane % WL_N, k, b, &u);
+        draw_column(1, WSE_LANE_N[wse.lane % WL_N], b, u, VAL(1u), -1, ICON_AUTO);
+        fmt_int(a, 100 - l->miss[k]);
+        draw_column(2, "PROB", a, "%", VAL(2u), (100 - l->miss[k]) * 10, ICON_AUTO);
+        if (wse.lane == WL_TIME) {
+            fmt_int(b, q->xf[k]);
+            draw_column(3, "XFADE", b, "%", VAL(3u), q->xf[k] * 10, ICON_AUTO);
+        } else {
+            draw_column(3, "XFADE", "--", "", T_DIM, -1, ICON_AUTO);
+        }
+    } else {
+        draw_column(0, "MODE", WSE_MODE_N[q->mode % 3u], "", VAL(0u), -1, ICON_AUTO);
+        draw_column(1, "SYNC", q->sync ? "ON" : "OFF", "", VAL(1u), -1, ICON_AUTO);
+        draw_column(2, "FROM", wse.from_s ? N_WS_SRC[WS_NWAVES + wse.from_s - 1u] : "--", "", wse.from_s ? VAL(2u) : T_DIM,
+                    -1, ICON_AUTO);
+        draw_column(3, "", "", "", T_THEME, -1, ICON_NONE);
+    }
+}
 static void draw_columns(void)
 {
     uint32_t c;
@@ -939,6 +1016,10 @@ static void draw_columns(void)
             card_span_of(d);
             draw_column(c, d->label, val, unit, VAL(c), RATIO(d, enum_rank(d, *vp)), param_icon(d, *vp));
         }
+        return;
+    }
+    if (wse_page(cur_page()->graph)) {                 /* WaveStorm: PATH .. SEQ SET (ui_wsedit.c) */
+        wse_columns(cur_page()->graph);
         return;
     }
     if (cur_page()->graph == GR_EVENTS) {              /* AUTOMATION (ui_events.c): ROW STEP PARAM VALUE */
