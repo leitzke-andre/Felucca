@@ -4,14 +4,10 @@
  * factory patterns (SAVE > PHRASES) and the parts' sounds at power-on. */
 #include "../engines/src/dsp.c"   /* Felucca-Engines (MIT): the shared DSP blocks */
 
-/* The parts' engine memory (1.5): a part plays one engine at a time, so the engines with large per-part state
- * (engine_t.mem: PHYS's slots, GRAIN's grains and index, DRUM's lanes, FM6's notes, SLICE's reverse windows)
- * keep it in one region per part instead of an array each. The region holds the state of the engine that
- * last claimed it (eng_mem_owner); a switch to another such engine zeroes its engine_t.mem bytes, which is
- * the state each had at power-on, so a switch sounds as it did with the arrays (tests/union_test.c). State
- * that runs on across notes and switches stays outside (WHEEL's wheels, GRAIN's random numbers).
- * Sized by the largest, ADPCM when it is built (else PHYS, 3 x SYMP's slot); an engine that needs more than ENG_MEM_PART grows it for
- * every part (x NPART of the pool). Zero-initialised pool section: main.c fm1_cstart clears it. */
+/* The parts' engine memory (Felucca 1.5): a region per part for an engine's large per-part state (engine_t.mem; in
+ * WaveStorm STORM's corners, eng_wavestorm.c ws_part_t), claimed by the engine that last used it (eng_mem_owner: a
+ * switch zeroes it, the power-on state). Sized by the largest engine (x NPART of the pool). Zero-initialised pool
+ * section: main.c fm1_cstart clears it. */
 #define ENG_MEM_PART 1024u     /* STORM: 8 voices x 4 corners of lane state, 32 bytes each (eng_wavestorm.c ws_part_t) */
 static union {
     uint64_t align;
@@ -23,7 +19,7 @@ static uint8_t eng_mem_owner[NPART];       /* engine index + 1 whose state is in
 
 #include "eng_wavestorm.c"       /* STORM: WaveStorm's vector synthesis and wave sequencing (MIT), the only engine */
 
-/* the editor protocol, user presets and projects store these indices: append, never reorder */
+/* the editor protocol, user presets and the autosave store these indices: append, never reorder */
 static const engine_t *const ENGINES[NENGINES] = {
     &ENG_WAVESTORM,              /* 0: STORM, the only engine */
 };
@@ -77,7 +73,7 @@ static uint32_t eng_step(uint32_t e, int32_t dir)
 
 /* factory sequence patterns: SAVE > PHRASES loads one into the selected track (ui.c pat_load); a preset
  * only suggests one with PAT(n), loading a sound never touches the steps. Absolute notes, loaded as they
- * are (DRUM plays them as GM drums, SLICE as slices; SCL TRANS and OCT transpose): 0 = rest;
+ * are (SCL TRANS and OCT transpose): 0 = rest;
  * flags 1 = accent, 2 = slide, 4 = tie (holds the previous note). Names: at most 8 characters */
 #define T_ 4
 static const struct {

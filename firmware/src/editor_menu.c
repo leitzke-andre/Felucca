@@ -7,14 +7,14 @@
  * ED_MENU: {row, id}, the 1.0.4 settings in the menu's order, then the later ones as they came (1.1: CLICK, CLICK LEVEL,
  * COUNT-IN, rows of AUDIO; 1.2: RESTORE LAST, SYSTEM; SCALE LEDS, CONTROL; 1.1.5: SCREEN OFF, DISPLAY; 1.2: SCOPE,
  * DISPLAY; STEP PREVIEW, CHORD ENTRY, CONTROL; MIDI IN, MIDI; TUNE, AUDIO; 1.3: HOME, DISPLAY; 1.5: HELP, SYSTEM;
- * 1.5.5: SELECT, CONTROL; T1..T4 CHANNEL, AUTO SELECT, SCREEN WAKE, MIDI): an index keeps its
+ * 1.5.5: SELECT, CONTROL; SCREEN WAKE, MIDI): an index keeps its
  * setting too, so an older editor lists what it knew where it was (the
  * editor groups them by their tab). An id keeps its meaning for good: a new setting takes the next free id
  * (append-only), wherever its row goes; ids 0..126 (127: none).
- * 1.2: MIDI IN (21) and TUNE (22) are the project's G_ROUTE and G_TUNE (menu_items.c MI_PROJECT), the same values as a
- * SET of global 14 / 3: MENU_SET applies them to the music in RAM, kept with the project (the autosave, PROJECT SAVE),
- * not in the settings record: rc 0, nothing for settings_save to write. TUNE is a number (EDM_INT: the cents -50..50,
- * unit "ct"), the only one so far. 1.5.5: T1..T4 CHANNEL (26..29), MIDI IN TRACK's channels, the project's as MIDI IN (rc 0) */
+ * 1.2: MIDI IN (21) and TUNE (22) are the part's G_ROUTE and G_TUNE (menu_items.c MI_PROJECT), the same values as a
+ * SET of global 14 / 3: MENU_SET applies them to the part in RAM, kept with it (the autosave), not in the settings
+ * record: rc 0, nothing for settings_save to write. TUNE is a number (EDM_INT: the cents -50..50, unit "ct"), the only
+ * one so far. (26..30 were Felucca's T1..T4 CHANNEL and AUTO SELECT: gone) */
 enum { ED_MENU_DESC = 72, ED_MENU_SET };
 enum { EDM_ENUM, EDM_INT };                            /* kind: names follow; or a unit (none yet) */
 static const uint8_t ED_MENU[][2] = {
@@ -27,9 +27,9 @@ static const uint8_t ED_MENU[][2] = {
     {MI_SCOPE, 18},                                    /* 1.2 (Discussion #165), a row of DISPLAY */
     {MI_PREVIEW, 19},                                  /* 1.2 (Discussion #169), a row of CONTROL */
     {MI_CHADD, 20},                                    /* 1.2 (#155), a row of CONTROL */
-    {MI_MIDIIN, 21},                                   /* 1.2: the project's G_ROUTE (was GLO > SYSTEM ROUT), MIDI */
-    {MI_TUNE, 22},                                     /* 1.2: the project's G_TUNE (was GLO > GLOBAL), AUDIO */
-    {MI_HOME, 23},                                     /* 1.3 (Discussions #112, #134): HOME SCOPE / TRACKS, DISPLAY */
+    {MI_MIDIIN, 21},                                   /* 1.2: the part's G_ROUTE (WaveStorm: a channel or OMNI), MIDI */
+    {MI_TUNE, 22},                                     /* 1.2: the part's G_TUNE, AUDIO */
+    {MI_HOME, 23},                                     /* 1.3: HOME VECTOR / SCOPE (Felucca: SCOPE / TRACKS), DISPLAY */
     {MI_HELP, 24},                                     /* 1.5 (Discussion #156): HELP OFF / ON, SYSTEM */
     {MI_SELECT, 25},                                   /* 1.5.5 (Discussion #188): SELECT BPM / PAGE, CONTROL */
                                                        /* (26..30: Felucca's T1..T4 CHANNEL and AUTO SELECT, gone) */
@@ -103,7 +103,7 @@ static int ed_menu_handle(uint32_t cmd, const uint8_t *a, uint32_t n)
     if (row == MI_SERIAL)
         menu_serial_at = fm1_ms | 1u;                  /* (applied 200 ms after this reply: usb_serial_apply) */
     ui.force = 1;                                      /* (the MENU page, if shown, redraws) */
-    ed_b(MI_PROJECT(row) ? 0u : ed_menu_save());       /* (the project's: in the music, no settings to save) */
+    ed_b(MI_PROJECT(row) ? 0u : ed_menu_save());       /* (the part's: no settings to save) */
     ed_b(a[0]);
     ed_v((int32_t)menu_get(row) + lo);
     return 1;

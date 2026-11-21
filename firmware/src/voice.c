@@ -28,9 +28,8 @@ static int32_t lfo_wave(track_t *t, uint32_t ph)
     }
 }
 
-/* the S&H value of a new LFO cycle. Parts 1..3 draw it from the shared generator (rng); part 4 has its
- * own xorshift, so the shared sequence, which also seeds the engines' noise (PHYS, VOICE, ..), does not
- * depend on part 4's LFO (the golden renders rely on it) */
+/* the S&H value of a new LFO cycle. Parts 1..3 draw it from the shared generator (rng); Felucca's part 4 had its
+ * own xorshift, so the shared sequence, which also seeded its engines' noise, did not depend on part 4's LFO */
 #define LFO_SHARED_RNG 3u
 static uint32_t lfo_rand(track_t *t)
 {
@@ -84,11 +83,6 @@ static void track_lfo_end(track_t *t)
         t->lfo_fade = t->p[P_LFADE] ? clamp(t->lfo_fade + (step ? step : 1), 0, 32767) : 32767;
     }
 }
-static void track_lfo_tick(track_t *t)                  /* (both at once: the tests) */
-{
-    track_lfo_adv(t);
-    track_lfo_end(t);
-}
 #else
 static void track_lfo_tick(track_t *t)                  /* (one core: the whole block in track_render, as up to 1.6) */
 {
@@ -115,7 +109,7 @@ static uint32_t trk_nvoice(const track_t *t)
     return c && c < NVOICE ? c : NVOICE;
 }
 
-/* the part's voice mode: P_VOICE, POLY for an engine of hits (engine_t.oneshot: DRUM) */
+/* the part's voice mode: P_VOICE, POLY for an engine of hits (engine_t.oneshot; not STORM) */
 static uint32_t trk_vmode(const track_t *t)
 {
     return ENGINES[t->engine]->oneshot ? V_POLY : (uint32_t)t->p[P_VOICE];
@@ -205,7 +199,7 @@ static voice_t *voice_reuse(track_t *t, voice_t *v)
     return v;
 }
 
-/* POLY allocation (within the engine's voice cap). DRUM: reuse its lane; other engines: the same note.
+/* POLY allocation (within the engine's voice cap): reuse the voice of the same note.
  * Else a free voice: ROTATE takes
  * the next one round-robin (release tails ring out), REUSE (or any GLIDE) takes
  * the free voice whose last pitch is closest, so poly portamento moves each
@@ -652,7 +646,7 @@ static __attribute__((noinline)) void spread_sum(int32_t *out)
 #endif
 
 /* render one block of a part into out (cleared here); returns the voices rendered */
-/* Channel bend is live performance state, outside projects/presets. Q8 semitones. */
+/* Channel bend is live performance state, outside presets and the autosave. Q8 semitones. */
 static int32_t midi_bend_q8[NTRK], midi_bend_target[NTRK];
 static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
 {
@@ -692,7 +686,7 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
     track_lfo_tick(t);
 #endif
     esync_coef(t);                                      /* this block's envelope steps for env_tick (ENV SYNC) */
-    if (e->block)                                       /* the engine's per-part work (WHEEL: bars, rotor) */
+    if (e->block)                                       /* the engine's per-part work (none in STORM) */
         e->block(t);
     for (i = 0; i < NVOICE; i++) {
         voice_t *v = &t->v[i];
@@ -702,7 +696,7 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
             continue;
         {
             env = env_tick(t, v);
-            if (e->ownenv && v->active) {               /* the engine's envelopes (FM6): they end the voice */
+            if (e->ownenv && v->active) {               /* the engine's own envelopes end the voice (not STORM) */
                 if (e->done(t, v)) {
                     v->active = v->gate = 0;
                     v->stage = 0;
@@ -749,7 +743,7 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
     }
     if (T_SPREAD(t))
         SPREAD_SUM(out, t);                /* out: every voice; spread_buf: the left ones */
-    if (e->post)                                        /* the engine's own effect over the part (ADPCM: its echo) */
+    if (e->post)                                        /* the engine's own effect over the part (none in STORM) */
         nr += e->post(t, out, n);
     if (fade) {
         for (i = 0; i < 8u; i++)

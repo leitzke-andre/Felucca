@@ -1,5 +1,13 @@
 # Felucca editor protocol (SysEx over USB-MIDI)
 
+> **WaveStorm:** this is Felucca's protocol document, kept for reference. WaveStorm answers the same frames with these
+> differences (see `WAVESTORM.md` and `firmware/src/editor.c`): one track (part); a step is 8 bytes (notes, time,
+> flags, velocity), and a longer Felucca step is taken with its extra bytes ignored; PROJECT (9), SONG (33), the
+> sample commands (11..15) and the backups (65..67) get no reply; the INFO tags for ratchet, nudge, condition and song
+> lanes are not sent; the MENU ids 26..30 (T1..T4 CHANNEL, AUTO SELECT) are gone and MIDI IN (21) is a channel
+> 0..15 or 16 OMNI. The tests and the web editor (`web/editor.html`, `fm1backup.js`) named below are Felucca's and
+> are not in this tree: WaveStorm has no web editor yet.
+
 The firmware side is `firmware/src/editor.c`. Commands 1-15, track selection, dumps, step reads
 and parameter writes (27, 29, 30, 31) were checked on hardware. `tests/editor_test.c` also exercises the real C
 handler, malformed transfers and stop timeouts against simulated flash. User-preset

@@ -159,7 +159,7 @@ static void midi_pedal_up(uint32_t ch)
             midi_release(ch, note);
 }
 
-/* Preset/project panic and CC120 must discard ownership so a later pedal-up
+/* A sound load's panic and CC120 must discard ownership so a later pedal-up
  * or note-off cannot release notes subsequently started on another patch. */
 static void __attribute__((noinline)) midi_forget_track(uint32_t track)
 {
@@ -377,7 +377,7 @@ static void __attribute__((noinline)) midi_route_block(void)
 
 /* Program Change (1.5.1, #179 by renebohne): the track the channel plays (ROUT as for notes) takes program d1. Only
  * noted here, 0x80 | d1 per track (a later one before the main loop wins): a sound load is the main loop's work
- * (undo, motion, FM6's patch), never the audio ISR's. ui.mpc (ui.c; a build without the UI: none) */
+ * (undo, motion), never the audio ISR's. ui.mpc (ui.c; a build without the UI: none) */
 static volatile uint8_t *const mpc_io;
 
 /* Keep the occasional controller/panic dispatch outside the hot rendering loop. Channel voice messages only

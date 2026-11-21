@@ -148,18 +148,17 @@ static int32_t roll_text(uint32_t k, int32_t x, int32_t y, const char *s, uint16
 }
 
 /* the header (y 0..24), three calm slots (1.2):
- *   left    the selected track's cushion (ink 4..20), the PROJECT slot letter of its pattern ("1 A", head_slot), the REC
- *           mark attached (filled: it is armed; outlined: another). A message centred hides the letter (its room)
- *   centre  the play state (stop, play, the song's disc), the metronome and the BPM (BPM LOCK ON: a lock right of
- *           it), the group's ink centred on x 120 (head_geo). The metronome swings on the click's beats (seq.c click_beat_now): mirrored
- *           on the bar's 2nd and 4th, the accent's on its 1st; stopped, still and MID
- *   right   the octave, or the song row while a song plays (ending at 208), and the battery (ink 216..236; its bolt
+ *   left    the selected track's cushion (ink 4..20), a pattern's slot letter (head_slot: Felucca's projects, none in
+ *           WaveStorm), the REC mark attached (filled: it is armed; outlined: another)
+ *   centre  the play state (stop, play), the metronome and the BPM (BPM LOCK ON: a lock right of it), the group's ink
+ *           centred on x 120 (head_geo). The metronome stands still (its swing went in 1.1.5), MID when stopped
+ *   right   the octave (ending at 208), and the battery (ink 216..236; its bolt
  *           says USB power: no separate USB icon)
  * A message or a layer's label replaces the centre and the octave, centred on x 120, up to
  * 166 px; while the BPM is being changed (a SELECT turn: bpm_t) or in the GLO layer the centre stays and the message
- * goes right of the BPM (over the right slot). Every element's ink centred on row 12 (H_HEAD / 2; ui_test.c
- * test_head_centres): icons by cv_icon_mid, text by its capitals' band (CAP_IN; the odd row left over above it, as
- * everywhere): M (BPM, the song row, the octave, a message: capitals rows 6..16) from y 2, S (OCT, a key hint: rows 7..15)
+ * goes right of the BPM (over the right slot). Every element's ink centred on row 12 (H_HEAD / 2): icons by
+ * cv_icon_mid, text by its capitals' band (CAP_IN; the odd row left over above it, as everywhere): M (BPM, the octave,
+ * a message: capitals rows 6..16) from y 2, S (OCT, a key hint: rows 7..15)
  * from y 4 */
 #define HEAD_SY CAP_IN(S, H_HEAD)
 #define HEAD_MY CAP_IN(M, H_HEAD)
@@ -167,14 +166,14 @@ static int32_t roll_text(uint32_t k, int32_t x, int32_t y, const char *s, uint16
 #define HEAD_REC_X 20                                  /* the REC mark's cell (ink 23..33), after the slot letter if any */
 #define HEAD_SLOT_X 23                                 /* the slot letter's pen (ui_draw.c head_slot) */
 #define HEAD_BAT_X 214                                 /* the battery's cell */
-#define HEAD_GRP_R 208                                 /* the octave / song row ends here */
+#define HEAD_GRP_R 208                                 /* the octave ends here */
 #define HEAD_MSG_W 166                                 /* a message centred on x 120: 37..203 (after the REC mark) */
 #define HEAD_GAP 4                                     /* ink to ink: the metronome -> the BPM -> the lock */
 #define HEAD_PLAY_GAP 6                                /* the play state -> the metronome */
 /* the header's centre (1.5.6): the play state, the metronome and the BPM (BPM LOCK ON: its lock) as one group, its
  * ink (gx0 .. gx1, past it) centred on x 120 (before: the BPM's alone, the rest hanging off to the left). The play
  * state's slot (px0 .. px1) is as wide as the wider of stop and play, so the group stays put on PLAY / STOP (the
- * narrower ink right-aligned in it, its gap to the metronome kept; a song's disc reaches a few px further left). The
+ * narrower ink right-aligned in it, its gap to the metronome kept). The
  * digits are placed by as many 0s as the BPM has digits (tabular figures: the same advance), so nothing moves while
  * the tempo changes, only with a digit more or less (or BPM LOCK turned). bx: the pen of the BPM, b: its ink; the
  * metronome's ink (mx0 .. mx1, past it); the BPM's rolling strip (sx0 .. sx1: between the metronome's cell, either
@@ -208,8 +207,8 @@ static void head_geo(head_geo_t *g, const char *bpm)
     g->sx0 = g->mx1 + (ib[0] > c - ib[2] ? ib[0] : c - ib[2]);
     g->sx1 = g->bx + g->b[2] + HEAD_GAP - lb[0];
 }
-/* the metronome with its ink at x0 (beat: click_beat_now; the 2nd and 4th mirrored, the same ink box; the 1st the
- * accent's). Mirrored by cv_flip: the cell's alpha drawn right to left, no second glyph */
+/* the metronome with its ink at x0 (beat: the 2nd and 4th mirrored, the same ink box; the 1st the accent's; -1, as
+ * since 1.1.5 removed its swing, standing). Mirrored by cv_flip: the cell's alpha drawn right to left, no second glyph */
 static void head_metro(int32_t x0, int32_t beat)
 {
     int32_t ib[4], c = 16;
@@ -282,10 +281,8 @@ static void head_msg(int32_t x, int32_t maxw)
     if (lock)
         cv_icon_mid(x + 6, H_HEAD / 2, 16, ICON_X_LOCK, T_THEME, T_BG);
 }
-/* the slot letter after the track's cushion (1.2): the PROJECT slot of the pattern the selected track plays or edits.
- * A song playing: its section's slot for the track ("-" silent there); else the slot the working pattern came from
- * (ui.c pat_from: the last PROJECT load or save), with a mark ("A*") once it was edited since (its steps, LEN DIV SWING
- * GATE, QUANTIZE or automation: ui.c pat_from_sig); none at power-on, after a PHRASES pattern or the editor's restore.
+/* the slot letter after the track's cushion (1.2): Felucca's PROJECT slot the working pattern came from (ui.c pat_from),
+ * with a mark ("A*") once it was edited since (ui.c pat_from_sig). WaveStorm has no projects: pat_from stays 0, none.
  * b: the letter (b[1] '*' or 0); 0 = none */
 static int head_slot(char *b)
 {
@@ -426,7 +423,7 @@ static void gap_rows(uint32_t y0, uint32_t y1)
     lcd_fill(RULE_X0 + RULE_W, r, 240u - RULE_X0 - RULE_W, 1, T_BG);
     lcd_fill(0, r + 1u, 240, y1 - r - 1u, T_BG);
 }
-/* the BG beside the four columns (the cards; MIXER's strips) over rows y .. y + h - 1; LINE: the dividers */
+/* the BG beside the four columns (the cards) over rows y .. y + h - 1; LINE: the dividers */
 static void draw_gaps(uint32_t y, uint32_t h)
 {
     uint32_t i;
@@ -769,8 +766,8 @@ static void foot_hint(char *a, char *b)
     str_cpy(b, ui.act && cur_page()->graph != GR_PATS ? "OCT- CANCEL" : "OCT- BACK", 16);
 }
 
-/* SAVE > USER / PROJECT: EDIT renames the selected slot (ui_name.c); SEQ > AUTOMATION: EDIT deletes the row's
- * record (ui_events.c); 0 = not such a page, 1 an empty slot (PLAY, QUANTIZE, + ADD), 2 used */
+/* SAVE > USER: EDIT renames the selected slot (ui_name.c); SEQ > AUTOMATION: EDIT deletes the row's
+ * record (ui_events.c); 0 = not such a page, 1 an empty slot (PLAY, + ADD), 2 used */
 static uint32_t foot_rename(void)
 {
     uint32_t g = ui.home ? GR_NONE : cur_page()->graph;
@@ -784,9 +781,7 @@ static uint32_t foot_rename(void)
     return 0;
 }
 
-/* the sound's name on the track: a user preset or the engine's preset (b holds 16). FM6 (#309): on a bank slot
- * (B1..B32) the name of the bank voice it plays; on OWN the patch's own name when it is not the name of the factory
- * patch of the track's preset (an edited factory patch keeps the preset's name) */
+/* the sound's name on the track: a user preset or the engine's preset (b holds 16) */
 static void sound_name(const track_t *t, char *b)
 {
     const engine_t *e = ENGINES[t->eng_req % NENGINES];
@@ -850,7 +845,7 @@ static void draw_foot(void)
         foot_hint(ha, hb);                            /* "OCT+ LOAD", "OCT- BACK": keycaps and their words */
         kh[0] = (khint_t){KC_OCTUP, ha + 5};
         kh[1] = (khint_t){KC_OCTDN, hb + 5};
-        if (rn) {                                     /* USER / PROJECT: "EDIT NAME" between them */
+        if (rn) {                                     /* USER: "EDIT NAME" between them (AUTOMATION: DELETE) */
             kh[2] = kh[1];
             kh[1] = (khint_t){KC_EDIT, cur_page()->graph == GR_EVENTS ? "DELETE" : "NAME"};
             cv_key_row(8, 232, 2, kh, 3, (act_ready() ? 1u : 0u) | (rn == 2u ? 2u : 0u) | 4u, T_BG);
@@ -882,8 +877,8 @@ static void draw_foot(void)
                 cv_rect(sx, 14, 9, 2, T_TEXT);          /* the step sounding */
         }
     }
-    {   /* row 2: engine icon + name, sound, page title at the right with its icon before it (MIXER, PHRASES, SONG,
-         * AUTOMATION); icons: their ink on the names' capitals */
+    {   /* row 2: engine icon + name, sound, page title at the right with its icon before it (PHRASES, AUTOMATION);
+         * icons: their ink on the names' capitals */
         uint32_t pi = ui.home ? ICON_NONE : page_icon(pg), ei = FELUCCA_ICONS ? engine_icon(ename) : ICON_NONE;
         int32_t r = 232, tx, ex, need = text_w(&AF_S, pn), ew = text_w(&AF_S, ename);
         ex = 8 + (FELUCCA_ICONS ? 12 + 5 : 0) + (ew < 80 ? ew : 80);   /* (where the engine's name ends) */
@@ -1081,24 +1076,6 @@ static void draw_columns(void)
         draw_act_column(1, ui.tl_clean && act_col() == 2u ? "CLEAN" : "SOUND", VAL(1u), ICON_AUTO);
         draw_column(2, "", "", "", T_THEME, -1, ICON_NONE);
         draw_column(3, "", "", "", T_THEME, -1, ICON_NONE);
-        return;
-    }
-    if (cur_page()->scope == SC_TRK) {                 /* LEVEL PAN REV MUTE of the selected track */
-        const track_t *t = TSEL;
-        uint32_t lvl = trk_level(song.sel);
-        param_format(&TP[P_LEVEL], (int32_t)lvl, val, &unit);   /* (0: OFF) */
-        card_mot_of(&TSEL->p[P_LEVEL]);
-        card_span_of(&TP[P_LEVEL]);
-        draw_column(0, "LEVEL", val, unit, lvl && !t->p[P_MUTE] ? VAL(0u) : T_DIM, (int32_t)lvl * 1000 / 127, ICON_AUTO);
-        param_format(&TP[P_PAN], t->p[P_PAN], val, &unit);
-        card_mot_of(&TSEL->p[P_PAN]);
-        card_span_of(&TP[P_PAN]);
-        draw_column(1, "PAN", val, unit, VAL(1u), RATIO(&TP[P_PAN], t->p[P_PAN]), param_icon(&TP[P_PAN], t->p[P_PAN]));
-        param_format(&TP[P_REV], t->p[P_REV], val, &unit);
-        card_mot_of(&TSEL->p[P_REV]);
-        card_span_of(&TP[P_REV]);
-        draw_column(2, "REV", val, unit, VAL(2u), RATIO(&TP[P_REV], t->p[P_REV]), ICON_AUTO);
-        draw_column(3, "MUTE", t->p[P_MUTE] ? "ON" : "OFF", "", t->p[P_MUTE] ? T_ACCENT : VAL(3u), -1, ICON_AUTO);
         return;
     }
     if (cur_page()->graph == GR_BROWSE) {
@@ -1403,7 +1380,7 @@ static void confirm_text(char *a, char *b)
         break;
     }
     default:
-        str_cpy(a, "CLEAR T1 SEQUENCE?", 24);     /* the header (T1..T4) is hidden */
+        str_cpy(a, "CLEAR T1 SEQUENCE?", 24);     /* (the header, with the track's number, is hidden) */
         a[7] = (char)('1' + k % NTRK);
         str_cpy(b, "STEPS AND AUTOMATION", 24);      /* (1.8: the automation goes too) */
         break;
@@ -1498,7 +1475,7 @@ static void ui_draw_page(uint32_t counting)
         draw_head();                                    /* recording remains visible over confirmations */
         return;
     }
-    if (name_on()) {                                    /* NAME: a user preset's or a project's (ui_name.c) */
+    if (name_on()) {                                    /* NAME: a user preset's (ui_name.c) */
         name_draw();
         return;
     }

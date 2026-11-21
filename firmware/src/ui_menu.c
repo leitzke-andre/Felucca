@@ -2,7 +2,7 @@
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* Felucca menu (HOME held): its rows in tabs (1.0.5: DISPLAY CONTROL AUDIO SYSTEM; 1.2: MIDI before SYSTEM; ALGORITHM
  * between them, PRESETS within one; no scrolling), the rows in menu_items.c (the settings, shared with the editor's
- * MENU_DESC / MENU_SET; 1.2: TUNE and MIDI IN, the project's). No BACK row: HOME closes it (ui_input.c). The two-valued
+ * MENU_DESC / MENU_SET; 1.2: TUNE and MIDI IN, the part's). No BACK row: HOME closes it (ui_input.c). The two-valued
  * rows are bits of ui_prefs (MENU_FLAGS). PRESETS scrolls from ABOUT through all credits (OCT- back to the tabs).
  * ui.menu: 1 the tabs, 2 ABOUT (information and credits), 3 INFO (1.2: the device's state, the old SYSTEM page's USB and
  * CPU readings). */
@@ -422,7 +422,7 @@ static void draw_menu(void)
           ui_rec_prefs * 92821u + ui_scr * 131071u +          /* (#157: SCREEN OFF's value redraws its row) */
           ui_prefs2 * 524287u + ui_idle * 1048573u +      /* (1.2: ANIM IDLE's value redraws its row) */
           ui_home_view * 7340033u +    /* (1.3: HOME) */
-          (uint32_t)(song.g[G_TUNE] + 64) * 8191u + (uint32_t)song.g[G_ROUTE] * 27449u +   /* (1.2: the project's rows) */
+          (uint32_t)(song.g[G_TUNE] + 64) * 8191u + (uint32_t)song.g[G_ROUTE] * 27449u +   /* (1.2: the part's rows) */
           (ui.menu == 2 ? ui.menu_scroll * 48611u : 0u) + (ui.menu == 3 ? info_sig() * 2654435761u : 0u);
     if (!ui.force && sig == ui.menu_sig) {
         if (ui.menu == 1 && mt.pos != pos0) {          /* only the tabs slid: their strip */

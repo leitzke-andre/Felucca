@@ -48,7 +48,7 @@ _Static_assert(sizeof rev_comb / 2u >= SP_LEN && sizeof rev_u.sp / 4u >= 4u * (S
  * goes round 8 lines that all feed each other, and they run at half the rate (22.05 kHz: the same memory holds
  * twice the time, so twice the resonances, at half the work; the tail stops near 10 kHz, as a hall's air
  * does). The send (every other sample of it, low-passed 1 2 1; ROOM's level) -> a low cut (~110 Hz: no boom
- * in a long tail) -> 2 allpass diffusers (rev_ap: a drum's click smeared into a burst) -> into the 8 lines
+ * in a long tail) -> 2 allpass diffusers (rev_ap: a click smeared into a burst) -> into the 8 lines
  * (rev_comb, mutually prime lengths, 21 .. 34 ms). Lines 1, 2, 4, 7 are read through slow sines (+-HL_MOD
  * samples, between samples; 0.37 or 0.74 Hz, each in its own phase): the resonances drift instead of ringing.
  * Lines 0, 3, 5, 6, read at their ends, go through a one-pole low-pass (DAMP: the mixing takes every echo
@@ -213,7 +213,7 @@ static inline void master_out(int32_t *l, int32_t *r)
     *r = softclip(*r);
 }
 
-/* length of one division (N_DIV order) in samples at the song tempo */
+/* length of one division (N_DIV order) in samples at the tempo */
 static const uint8_t DIV_DEN[6] = {1, 2, 4, 8, 3, 6};    /* original IDs stay fixed; slow rates append */
 static uint32_t midi_beat_samples;                    /* zero until an external clock has a measured tempo */
 static uint32_t beat_samples(void)
@@ -636,9 +636,8 @@ static __attribute__((noinline)) void rev_side_mix(int32_t *l, int32_t *r, uint3
  * as before (nothing runs). MIX glides (2.9 ms, RAMP_SLOPE); a TYPE change fades the old one out, clears the state,
  * fades the new one in; so does a start from MIX 0 (no stale line or filter). With SPREAD (mix_spread) the insert
  * takes the mono sum b, as DIST does; the side passes it by.
- * Order: DIST -> INSERT -> SLICER: the insert colours the sound as DIST does; the SLICER's gate (and its STUT
- * recordings) comes after, so its edges stay sharp (no flanger feedback or phaser ringing smears them) and a STUT
- * repeats the processed sound. State in the pool, per track (ins[], 580 B each); noinline, its own loops: the audio
+ * Order: DIST -> INSERT: the insert colours the sound as DIST does (Felucca's SLICER came after it). State in the
+ * pool, per track (ins[], 580 B each); noinline, its own loops: the audio
  * ISR's inlined path gains one test per part (track_t ins_run) */
 enum { IT_OFF, IT_SOFT, IT_HARD, IT_FOLD, IT_FUZZ, IT_CRUSH, IT_PHASER, IT_FLANGER, IT_CHORUS, IT_N };
 #define IL_LEN 256u                     /* FLANG / CHOR: the line, samples (a power of 2: masked) */
@@ -862,9 +861,8 @@ static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_
 }
 
 /* a part's cost for the second core's split (mix_split, after Jangada's): its voices x its engine's cost per
- * voice (ENG_VCOST: the host's instructions per sample, tests/regress.c CPU at 8 notes held less the idle mix, over the
- * engine's voices), and the DIST, INSERT and sends while it sounds or its tail runs. ENGINES[] order; DIGITAL as FM6
- * when built, nothing when retired. An estimate: it only steers the split, the sound does not depend on it */
+ * voice (ENG_VCOST: the host's instructions per sample, Felucca's tests/regress.c CPU at 8 notes held less the idle mix, over the
+ * engine's voices), and the DIST, INSERT and sends while it sounds or its tail runs. ENGINES[] order. An estimate: it only steers the split, the sound does not depend on it */
 #if FELUCCA_CPU2
 static uint16_t part_cost[NTRK];                        /* the last block's, per part */
 static const uint16_t ENG_VCOST[NENGINES] = {148};     /* STORM (STORM PAD: 1187 instructions / sample at 8 notes) */
@@ -973,9 +971,9 @@ static __attribute__((noinline)) void perf_master(int32_t *out, uint32_t n)
  * and goes on (the LFOs' blocks, the FX layer, the buses, the master) as with one core. The sums are integers, so the
  * order they add up in changes nothing: the output is bit for bit one core's. A part's render touches its own state
  * only (its track_t with its SPREAD, ENV SYNC and LFO phase, its voices, its matrix: mod.c MOD, its SPREAD buffer,
- * its engine's memory) and what nobody writes meanwhile (song, the tables); what parts share is done before the
+ * its engine's memory) and what nobody writes meanwhile (the song state, the tables); what parts share is done before the
  * split (events_block: the notes, voice stealing; the FX layer's perf_begin) or after it (the LFOs' S&H draw from the
- * shared generator, part by part: voice.c track_lfo_end). tests/dualcore_test.c checks it, under ThreadSanitizer too.
+ * shared generator, part by part: voice.c track_lfo_end). Felucca's tests/dualcore_test.c checked it, under ThreadSanitizer too (not in this tree).
  * Without a second core (the host, the browser, MENU > 2ND CORE OFF, one that did not answer or stopped) C1_RUN takes
  * nothing and this core renders them all */
 #if FELUCCA_CPU2

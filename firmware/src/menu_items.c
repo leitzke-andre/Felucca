@@ -5,15 +5,14 @@
  * SCREEN OFF; 1.2: SCOPE; 1.3: HOME), the
  * controls (HOLD: the layer threshold, KNOB ACCEL, FX LATCH, BPM LOCK; 1.2: SCALE LEDS, the keys, STEP PREVIEW, CHORD
  * ENTRY; 1.5.5: SELECT, BPM or PAGE), the sound (SPEAKER EQ: FLAT LOWCUT BASS+,
- * USB LEVEL; 1.1: CLICK, CLICK LEVEL, COUNT-IN; 1.2: TUNE), MIDI (1.2: MIDI IN; 1.5.5: T1..T4 CHANNEL, AUTO SELECT, SCREEN WAKE; 1.5: LEARN CLEAR), USB SERIAL, RESTORE
+ * USB LEVEL; 1.1: CLICK, CLICK LEVEL, COUNT-IN; 1.2: TUNE), MIDI (MIDI IN: WaveStorm's one channel or OMNI; 1.5.5: SCREEN WAKE; 1.5: LEARN CLEAR), USB SERIAL, RESTORE
  * LAST (1.2), then CALIBRATION (the setup screen: HARDWARE CALIBRATION), INFO (1.2) and ABOUT, the rows with no value
  * (MI_VALUES: the rows before them hold one, but LEARN CLEAR: menu_valued). 1.0.5: in four tabs (MI_TAB); 1.2: five.
- * 1.8 (#266): CLEAR ALL (SYSTEM), a row with no value: OCT+ asks (the dialog), then the music as a new project
+ * 1.8 (#266): CLEAR ALL (SYSTEM), a row with no value: OCT+ asks (the dialog), then the part as at power-on
  * (ws_store.c clear_all); the user presets, settings and MIDI LEARN stay
  * 1.5: LEARN CLEAR (MIDI) is an action, not a setting: OCT+ clears MIDI LEARN's map (midi_learn.c ml_clear_all; the editor
  * has LEARN_SET op 2 for it, so MENU_DESC does not offer it); the row shows how many CCs are learned
- * 1.2: TUNE and MIDI IN are not settings: they edit the project's G_TUNE and G_ROUTE (up to 1.1.5 on GLO > GLOBAL and
- * GLO > SYSTEM), the values the project holds and saves as before (no format change; a project load brings its own);
+ * 1.2: TUNE and MIDI IN are not settings: they edit the part's G_TUNE and G_ROUTE, kept with the part (the autosave);
  * nothing of theirs is in the settings record (MI_PROJECT: menu_get / menu_put read and write song.g) */
 enum { MI_COLOR, MI_STYLE, MI_LARGE, MI_ANIM, MI_LEDS, MI_SCROFF, MI_SCOPE, MI_HOME, MI_HOLD, MI_ACCEL, MI_LATCH, MI_BPMLOCK, MI_SCLLED,
        MI_PREVIEW, MI_CHADD, MI_SELECT, MI_LOWCUT, MI_USB,
@@ -26,8 +25,8 @@ enum { MI_COLOR, MI_STYLE, MI_LARGE, MI_ANIM, MI_LEDS, MI_SCROFF, MI_SCOPE, MI_H
                                                         * SYSTEM, SCALE LEDS STEP PREVIEW CHORD ENTRY in CONTROL, SCOPE in
                                                         * DISPLAY, TUNE in AUDIO, MIDI IN in MIDI, INFO in SYSTEM;
                                                         * 1.3: HOME in DISPLAY; 1.5: HELP in SYSTEM; 1.5.5: SELECT
-                                                        * in CONTROL, T1..T4 CHANNEL, AUTO SELECT and SCREEN WAKE
-                                                        * in MIDI; 1.6.1: 2ND CORE in SYSTEM) */
+                                                        * in CONTROL, SCREEN WAKE in MIDI; 1.6.1: 2ND CORE in
+                                                        * SYSTEM) */
 #define MI_VALUES MI_CLRALL
 #if FELUCCA_CPU2
 #define MI_TEXT(row) ((row) == MI_CPU2)                /* OFF / ON (BETA): its values as words, not a switch (ui_menu.c) */
@@ -46,13 +45,12 @@ static const char *const MI_NAME[MI_COUNT] = {"COLOR", "STYLE", "LARGE", "ANIM",
                                               "CLEAR ALL", "CALIBRATION", "INFO",
                                               "ABOUT"};
 /* 1.0.5: the MENU's tabs (ui_menu.c: ALGORITHM steps between them, PRESETS among one tab's rows; the editor gets a
- * row's tab after its MENU_DESC reply). A tab's rows follow each other in MI order (tests/ui_test.c checks it); at
- * most MTAB_ROWS each (the page does not scroll: ui_menu.c fits them; 1.2: 7, the rows of such a tab 21 px; 1.3: 8,
+ * row's tab after its MENU_DESC reply). A tab's rows follow each other in MI order; at
+ * most 8 each (the page does not scroll: ui_menu.c fits them; 1.2: 7, the rows of such a tab 21 px; 1.3: 8,
  * 18 px). A new row
  * joins a tab here. Tabs are in the order the device shows them; a tab's index is what the editor is told, not an id
  * (1.2: MIDI came in before SYSTEM, SYSTEM's index 3 -> 4) */
 enum { MTAB_DISPLAY, MTAB_CONTROL, MTAB_AUDIO, MTAB_MIDI, MTAB_SYSTEM, MTAB_COUNT };
-#define MTAB_ROWS 8u
 static const char *const MTAB_NAME[MTAB_COUNT] = {"DISPLAY", "CONTROL", "AUDIO", "MIDI", "SYSTEM"};
 static const uint8_t MI_TAB[MI_COUNT] = {
     MTAB_DISPLAY, MTAB_DISPLAY, MTAB_DISPLAY, MTAB_DISPLAY, MTAB_DISPLAY,   /* COLOR STYLE LARGE ANIM LEDS */
@@ -76,7 +74,7 @@ static const uint8_t MI_TAB[MI_COUNT] = {
     MTAB_SYSTEM,                                                            /* CLEAR ALL (1.8, #266) */
     MTAB_SYSTEM, MTAB_SYSTEM, MTAB_SYSTEM,                                  /* CALIBRATION, INFO (1.2), ABOUT */
 };
-/* TUNE: the project's tuning in cents (G_TUNE, -50..+50); as a row its values 0..TUNE_N - 1 (value - TUNE_MIN). The
+/* TUNE: the part's tuning in cents (G_TUNE, -50..+50); as a row its values 0..TUNE_N - 1 (value - TUNE_MIN). The
  * editor gets it as a number (EDM_INT: the cents, min..max, its unit) */
 #define TUNE_MIN (-50)
 #define TUNE_N 101u
@@ -110,7 +108,7 @@ static const menu_flag_t MENU_FLAGS[] = {
     {MI_USB, PREF_USB_FIXED, {"MASTER", "FIXED"}},     /* fx.c fx_usb_fixed: FIXED, USB at the full level */
     {MI_BPMLOCK, PREF_BPM_LOCK, {"OFF", "ON"}},        /* #58: ON, SELECT sets the tempo with GLO held only (ui_input.c) */
     {MI_SERIAL, PREF_SERIAL_OFF, {"ON", "OFF"}},       /* #67: OFF, no serial console (usb_serial_apply) */
-    {MI_RESTORE, PREF_RESTORE_OFF, {"ON", "OFF"}},     /* 1.2, #130: OFF, no autosave, power-on as new (project.c) */
+    {MI_RESTORE, PREF_RESTORE_OFF, {"ON", "OFF"}},     /* 1.2, #130: OFF, no autosave, power-on as new (ws_store.c) */
     {MI_SCLLED, PREF_SCALE_LEDS, {"OFF", "ON"}},      /* 1.2, Discussion #127: ON, the keys show the scale (ui_input.c) */
     {MI_SCOPE, PREF_SCOPE_MIX, {"OUT", "MIX"}},        /* 1.2, Discussion #165: MIX, the scope before MASTER (fx.c) */
     {MI_PREVIEW, PREF_PREVIEW, {"OFF", "ON"}},         /* 1.2, Discussion #169: ON, the cursor's step sounds (ui_input.c) */
@@ -138,7 +136,7 @@ static const char *const SCROFF_N[5] = {"NEVER", "5 MIN", "15 MIN", "30 MIN", "6
  * ui_idle). Its values keep 1.1's: 0 ON, 1 OFF (the editor's), 2 IDLE; the menu steps them OFF, ON, IDLE (ANIM_ORD) */
 static const char *const ANIM_N[3] = {"ON", "OFF", "IDLE"};
 static const uint8_t ANIM_ORD[3] = {1, 0, 2};          /* (a value's place in the menu's order, and back: its own inverse) */
-/* 1.3 (Discussions #112, #134): what HOME shows under its cards (ui.c ui_home_view): the scope, or the four tracks */
+/* what HOME shows under its cards (ui.c ui_home_view): the vector square, or the scope */
 static const char *const HOME_N[HV_COUNT] = {"VECTOR", "SCOPE"};
 
 /* MENU > USB SERIAL (#67). The serial console is a developer tool (README: FELUCCA_CDC). ON (the default) presents it,
@@ -241,8 +239,8 @@ static const char *menu_vname(uint32_t row, uint32_t v)
 /* set a row (v below menu_n(row)) and do what the menu does on a change: the palette, the EQ and USB LEVEL at once;
  * STYLE (ui_draw.c style_apply), LARGE, ANIM, LEDS, HOLD, the flags are read where they are used, every frame;
  * USB SERIAL when the menu has closed (usb_serial_apply). Saved by the caller (menu_close, the editor). TUNE and MIDI IN:
- * the project's values, as their page knobs set them up to 1.1.5 (voice.c reads TUNE, seq.c events_block ROUT's change);
- * kept with the project (PROJECT SAVE, the autosave), not by settings_save */
+ * the part's values (voice.c reads TUNE, seq.c events_block MIDI IN's change); kept with the part (the autosave), not
+ * by settings_save */
 static void menu_put(uint32_t row, uint32_t v)
 {
     const menu_flag_t *f = menu_flag(row);

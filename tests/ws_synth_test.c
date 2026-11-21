@@ -263,6 +263,8 @@ int main(void)
             web_keys(0);
             render_ms(1500);
         }
+        CHECK(motion_param(P_CUT) && motion_param(P_RES) && motion_param(P_FKEY) && !motion_param(P_FTYPE) &&
+              motion_param(P_E0) && motion_param(P_E1), "the filter's CUT RES KEY (not TYPE), X and Y can be automated and locked");
         CHECK(pg < NPAGES && ok_f && pk[0] > 0.01f && pk[1] > 0.002f && pk[2] > 0.002f && pk[3] > 0.002f,
               "EDIT > FILTER; VECT BASS sets its low-pass; OFF LP BP HP all sound (%.3f %.3f %.3f %.3f)", pk[0], pk[1],
               pk[2], pk[3]);

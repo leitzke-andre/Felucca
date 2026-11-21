@@ -122,7 +122,8 @@ start from. They are saved in user presets, the autosave and the undo.
   part, the part's mix is inlined into the audio ISR (no `mix_part` function in the binary). The ALGORITHM knob, which
   selects tracks in Felucca, does nothing yet.
 - **The step** is 8 bytes: up to four notes, NOTE / TIE / REST, accent and slide, velocity. The autosave format is
-  version 3 (the step, and no project globals); an older one is ignored.
+  versioned (6 now: the step, no project globals, MIDI IN a channel, the filter, the sound's own path and sequences);
+  an older one is ignored.
 - **The editor protocol** (`editor.c`) stays: firmware updates over USB only start when it has declined a frame, and
   the parameters, steps, motion, user presets, MIDI LEARN and the palette are still served. A step travels as its 8
   bytes; a longer one from a Felucca editor is taken with its extra bytes ignored. PROJECT, SONG, the sample and backup
@@ -171,13 +172,14 @@ Felucca (`FM-1_900`), so Felucca's installer and the update entry take it. Test 
 
 | | Felucca + STORM (`wavestorm-claude`) | WaveStorm (this branch) |
 | --- | --- | --- |
-| App image (slot 581,564 B) | 541,396 B | 303,376 B (about 278 KB free) |
-| RAM `.data` + `.bss` (of 73,728 B) | 62,356 B | 33,700 B |
-| Pool (of 368,640 B) | 326,236 B | 258,868 B |
+| App image (slot 581,564 B) | 541,396 B | 306,544 B (about 275 KB free) |
+| RAM `.data` + `.bss` (of 73,728 B) | 62,356 B | 34,372 B |
+| Pool (of 368,640 B) | 326,236 B | 282,204 B |
 | Wave bank | 16 waves, 19.7 KB | 48 waves, 59.1 KB |
-| Audio ISR, target cost estimate | 4,196 (+ `mix_part` per part) | 3,896 (one part, inlined) |
+| Audio ISR, target cost estimate | 4,196 (+ `mix_part` per part) | 3,925 (one part, inlined) |
 
-The pool holds the perform FX layer's harmonizer buffer (32 KB) of its own: in Felucca it borrowed the SLICER's, and
+The pool holds the user presets' paths and sequences (a RAM mirror of 22 KB, ws_sound.c) and the perform FX layer's
+harmonizer buffer (32 KB) of its own: in Felucca it borrowed the SLICER's, and
 with one part that borrowing read past the end of it.
 
 ## Not done yet
@@ -185,14 +187,17 @@ with one part that borrowing read past the end of it.
 - **Not run on hardware.** CPU cost on the FM-1 is unmeasured (host figures: a STORM voice costs about as much as an
   ANALOG one); the worst case is 8 table reads a voice-sample.
 - **Identity:** the boot screen, ABOUT and the package file say WaveStorm; the package identity (`FM-1_900`), the USB
-  device name and the editor protocol's INFO still say Felucca, so Felucca's installers, update entry and editor keep
+  device name and the editor protocol's INFO still say Felucca, so Felucca's installers and the update entry keep
   working.
-- **The bundled web editor** (`web/editor.html`) is Felucca's: it shows four tracks, projects, songs and samples that
-  this build does not answer.
+- **No web editor.** Felucca's (`web/editor.html`) and its backups were removed: they knew four tracks, projects, songs
+  and samples and nothing of WaveStorm. The protocol (`editor.c`, `web/EDITOR_PROTOCOL.md`) is still served, for a
+  WaveStorm editor later. The web installer (`web/index_pkg.html`, built into a site by `web/make_site.py`) stays,
+  without its backup step: returning to the official firmware does not carry WaveStorm's sounds over.
 - **Recording a path from the knobs**, per-corner tuning, layers; an undo of single edits on the PATH and SEQ pages
   (SAVE held undoes sound loads only).
 - **User presets** keep 16 steps of the 64 (the record format is Felucca's); the free ALGORITHM knob could steer X.
-- **Old Felucca data** on a unit is ignored, not converted: its user presets (other engines) read as empty, its autosave
+- **Old Felucca data** on a unit is ignored, not converted: its user presets of engines 1 and up read as empty (one
+  of ANALOG, Felucca's engine 0, loads as a STORM sound with ANALOG's values), its autosave
   is not WaveStorm's format (an autosave of an earlier WaveStorm build is ignored too: version 6 now), and MIDI LEARN
   maps made with Felucca point at other parameters (the numbers moved).
   Settings carry over.

@@ -121,7 +121,7 @@ static const icon_map_t ICON_MAP[] = {
     {"MODE", ICON_ARP}, {"OCT", ICON_OCTAVE}, {"GATE", ICON_GATE}, {"SWG", ICON_SWING},
     {"PROB", ICON_PROB}, {"HOLD", ICON_HOLD}, {"ORD", ICON_ORDER}, {"ROOT", ICON_PITCH},
     {"SCL", ICON_SCALE}, {"QNT", ICON_QUANTIZE}, {"TRN", ICON_TRANSPOSE}, {"LEN", ICON_LENGTH},
-    {"DIV", ICON_DIVISION}, {"VOIC", ICON_OCTAVE},   /* (CHRD: below, PHYS's) */
+    {"DIV", ICON_DIVISION}, {"VOIC", ICON_OCTAVE},   /* (CHRD: below) */
     /* fx sends, voice */
     {"DST", ICON_DIST}, {"CHO", ICON_CHORUS}, {"DLY", ICON_DELAY}, {"REV", ICON_REVERB},
     {"VCE", ICON_VOICE}, {"GLD", ICON_GLIDE}, {"GLMOD", ICON_GLIDE}, {"PRIO", ICON_ORDER},
@@ -132,32 +132,14 @@ static const icon_map_t ICON_MAP[] = {
     {"DAMP", ICON_DAMP}, {"TYPE", ICON_REVERB}, {"CRT", ICON_RATE}, {"CDP", ICON_MOD}, {"MIDI", ICON_MIDI},
     {"SYNC", ICON_TEMPO}, {"ROUT", ICON_MIX}, {"CPU", ICON_CHIP}, {"SLOT", ICON_SAVE},
     {"LOAD", ICON_LOAD}, {"SAVE", ICON_SAVE}, {"ENG", ICON_WAVE}, {"CLRSQ", ICON_CLEAR},
-    {"INIT", ICON_CLEAR}, {"ERASE", ICON_CLEAR}, {"CH", ICON_MIDI}, {"LEVEL", ICON_LEVEL},
-    /* engines (eng_*.c edit[] labels) */
-    {"DTN", ICON_DETUNE}, {"NOIS", ICON_NOISE}, {"CUT", ICON_CUTOFF}, {"RES", ICON_RESO},
-    {"DRV", ICON_DRIVE}, {"KTR", ICON_KEYTRACK}, {"ALG", ICON_ALGORITHM}, {"R2", ICON_RATIO},
-    {"R3", ICON_RATIO}, {"R4", ICON_RATIO}, {"IDX", ICON_MOD}, {"MDEC", ICON_DECAY},
-    {"FB", ICON_FEEDBACK}, {"CHIP", ICON_CHIP}, {"DUTY", ICON_PULSE}, {"CRSH", ICON_BITS},
-    {"SWP", ICON_SWEEP}, {"VIB", ICON_VIBRATO}, {"ARP", ICON_ARP}, {"TONE", ICON_TONE},
-    {"SET", ICON_SAMPLE}, {"BITS", ICON_BITS}, {"LOOP", ICON_LOOP}, {"WAVE2", ICON_WAVE},
-    {"DCW", ICON_SHAPE}, {"ENV", ICON_ENV}, {"LINE", ICON_MIX}, {"SUB", ICON_SUB},
-    {"FOLD", ICON_FOLD}, {"WAV#", ICON_WAVE}, {"DCY", ICON_DECAY}, {"INT2", ICON_TRANSPOSE},
-    {"INT3", ICON_TRANSPOSE}, {"PW", ICON_PULSE},
-    {"REG", ICON_DRAWBAR}, {"BODY", ICON_LEVEL}, {"TOP", ICON_TONE}, {"PERC", ICON_DECAY},
-    {"CLICK", ICON_ATTACK}, {"ROTR", ICON_VIBRATO},
-    {"SRC", ICON_SAMPLE}, {"START", ICON_STEPS}, {"PTCH", ICON_PITCH}, {"DCAY", ICON_DECAY},
-    {"POS", ICON_PHASE}, {"DENS", ICON_GRAIN}, {"SPRD", ICON_NOISE},
-    {"MODEL", ICON_PHYS}, {"STRC", ICON_SHAPE}, {"BRIT", ICON_TONE}, {"BOW", ICON_SUSTAIN}, {"EXC", ICON_MIX},   /* PHYS */
-    {"HARM", ICON_RATIO}, {"BEND", ICON_SWEEP}, {"CHRD", ICON_SCALE}, {"SYMP", ICON_MIX}, {"DECY", ICON_DECAY},
-    {"SNAP", ICON_NOISE}, {"KIT", ICON_SAMPLE}, {"KICK", ICON_ATTACK},       /* PHYS: MEMB, SYMP; DRUM */
-    {"VOWL", ICON_VOICE}, {"VOWL2", ICON_VOICE}, {"TALK", ICON_SWEEP}, {"SHIFT", ICON_TRANSPOSE},
-    {"BUZZ", ICON_PULSE}, {"BRTH", ICON_NOISE}, {"Q", ICON_RESO}, {"RAND", ICON_PROB},
-    {"FREQ", ICON_CUTOFF}, {"TRK", ICON_KEYTRACK}, {"DRFT", ICON_SWEEP},   /* NOISE (COLR, DENS, CRSH: above) */
-    {"MLVL", ICON_MOD}, {"MRAT", ICON_RATIO}, {"MEG", ICON_DECAY}, {"VMOD", ICON_ACCENT}, {"DTUN", ICON_DETUNE},
-    {"SLOT", ICON_LOAD},                                                    /* FM6 (ALG, FB: above) */
-    /* fixed columns drawn by ui_draw.c (STEP page, preset browser) */
-    {"NOTE", ICON_PITCH}, {"STEP", ICON_STEPS}, {"FLAG", ICON_ACCENT}, {"ACC", ICON_ACCENT}, {"LANE", ICON_DRUM}, {"HIT", ICON_GATE}, {"SLD", ICON_SLIDE},
-    {"TRACK", ICON_MIX},                  /* TRACKS page (LEVEL, LEN, PAN: above) */
+    {"INIT", ICON_CLEAR}, {"ERASE", ICON_CLEAR}, {"LEVEL", ICON_LEVEL},
+    /* the voice filter (EDIT > FILTER), the matrix, chords, the step and WaveStorm's editing pages */
+    {"CUT", ICON_CUTOFF}, {"RES", ICON_RESO}, {"KEY", ICON_KEYTRACK},
+    {"ARP", ICON_ARP}, {"SET", ICON_SAMPLE}, {"LOOP", ICON_LOOP}, {"ENV", ICON_ENV}, {"CLICK", ICON_ATTACK},
+    {"SRC", ICON_SAMPLE}, {"SPRD", ICON_NOISE}, {"CHRD", ICON_SCALE}, {"RAND", ICON_PROB},
+    {"PITCH", ICON_PITCH}, {"XFADE", ICON_FADE}, {"POINT", ICON_STEPS}, {"POINTS", ICON_STEPS}, {"SEQ", ICON_STEPS},
+    {"NOTE", ICON_PITCH}, {"STEP", ICON_STEPS}, {"FLAG", ICON_ACCENT}, {"ACC", ICON_ACCENT}, {"LANE", ICON_STEPS},
+    {"SLD", ICON_SLIDE},
 };
 
 static uint32_t icon_for_label(const char *l)
@@ -171,12 +153,10 @@ static uint32_t icon_for_label(const char *l)
     return ICON_GENERIC;
 }
 
-/* WAVE / WAVE2 set to a shape: that shape's icon (value names of the engines and the LFO) */
+/* WAVE set to a shape: that shape's icon (the LFO's value names) */
 static const icon_map_t WAVE_ICON[] = {
     {"SIN", ICON_W_SIN}, {"TRI", ICON_W_TRI}, {"SAW", ICON_W_SAW}, {"SQR", ICON_W_SQR},
-    {"PLS", ICON_W_PLS}, {"PWM", ICON_W_PWM}, {"S&H", ICON_W_SH}, {"NOIS", ICON_NOISE},
-    {"DSIN", ICON_W_DSIN}, {"SPLS", ICON_W_SPLS}, {"RSAW", ICON_W_RSAW}, {"RTRI", ICON_W_RTRI},
-    {"RTRP", ICON_W_RTRP},
+    {"S&H", ICON_W_SH},
 };
 
 static uint32_t param_icon(const param_desc_t *d, int32_t v)
@@ -195,6 +175,8 @@ static uint32_t param_icon(const param_desc_t *d, int32_t v)
         return ICON_DIVISION;                 /* arp RATE is a note division, not Hz */
     if (d == &TP[P_ESYNC])
         return ICON_TEMPO;                    /* ENV SYNC (1.5): as LFO 2's SYNC */
+    if (d == &TP[P_FTYPE])
+        return ICON_CUTOFF;                   /* the filter's TYPE (WaveStorm): "TYPE" is also REVERB's */
     return icon_for_label(d->label);
 }
 
@@ -225,16 +207,7 @@ static uint32_t mod_dst_icon(const track_t *t, int32_t d)
 static uint32_t engine_icon(const char *name)
 {
     static const icon_map_t M[] = {
-        {"ANALOG", ICON_WAVE},
-        {"PHASE", ICON_PHASE}, {"LOFI", ICON_BITS},
-        {"SAMPLE", ICON_SAMPLE}, {"VOICE", ICON_MOUTH}, {"TRIO", ICON_TRIO}, {"WHEEL", ICON_DRAWBAR},
-        {"SLICE", ICON_SLICE},
-        {"GRAIN", ICON_GRAIN},
-        {"PHYS", ICON_PHYS},
-        {"DRUM", ICON_DRUM},
-        {"NOISE", ICON_NOISE},
-        {"FM6", ICON_MOD},                    /* (symbol_modular: six operators patched; a glyph of its own wanted) */
-        {"ADPCM", ICON_SAMPLE},               /* (short sampled waves) */
+        {"STORM", ICON_WAVE},                 /* (WaveStorm's one engine) */
     };
     uint32_t i;
     for (i = 0; i < sizeof M / sizeof M[0]; i++)

@@ -1,55 +1,27 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* User presets (editor protocol v2, cmds 16-21; the SAVE > USER page): 32
- * slots in two storage.c objects (OBJ_UPRESET0/1, A/B sectors at
- * 0xDC000..0xDFFFF), 16 records each, mirrored in RAM so browsing never
- * reads flash. A record: engine, name, the instrument parameters, a 16-step
- * pattern (factory PATTERNS[] format). An FM6 sound's patch is kept beside the record (up_fm6.c, since 1.0.3:
- * the record itself is unchanged). Loading one loads the sound only; its pattern
- * is offered by SAVE > PHRASES ("U07", up_pat_load). The format is unchanged.
+/* User presets (editor protocol v2, cmds 16-21; the SAVE > USER page): 32 slots in two storage.c objects
+ * (OBJ_UPRESET0/1, A/B sectors at 0xDC000..0xDFFFF), 16 records each, mirrored in RAM so browsing never reads flash.
+ * A record (Felucca's format): engine, name, the instrument parameters, a 16-step pattern (factory PATTERNS[] format).
+ * WaveStorm keeps each slot's own path and sequences beside it (ws_sound.c), as Felucca kept FM6 patches.
  *
- * Versions: a bank whose magic, record size or slot count differ reads as
- * empty; so does a record with another layout version. A record keeps np =
- * the P_COUNT it was stored with; when that differs from today's it is
- * mapped by count: its last 8 values are P_E0..P_E7, the first np - 8 are
- * P_LEVEL.. in order, and parameters it does not have take their defaults.
- * That holds as long as common parameters are only ever added just before
- * P_E0 (else bump UP_VER and translate). Version 1 (before 1.0) has the
- * same layout; only its PHYS MODEL 2 meant DUST, which up_values loads as
- * MODAL bowed (eng_phys.c phys_legacy). A record of PHYS MODEL 4 (DRUM, version 2
- * until the kit became the DRUM engine) is that engine: up_migrate rewrites it
- * in the RAM mirror when a bank is read and when UP_PUT sends one (core.h
- * drum_from_phys); flash keeps the old record until its bank is written again,
- * which stores the new one. No version bump: today's PHYS has no MODEL 4, so
- * such a record cannot be anything else, and older firmware keeps reading the bank.
- * A record of SAMPLE SET 4 (PERC, the GM kit, retired after 1.0.2) is migrated the same way to the DRUM engine
- * with its default kit (core.h drum_from_perc: its E values the kit's, the rest of the sound and its pattern as
- * stored; the GM notes play the same drums).
- * Version 3 (UP_VER_GRID, since the DRUM grid) is the same record with a drum grid as its pattern: note[i] is
- * step i's lane hits (bit l = lane l), flags[i] their accents. A DRUM track whose first 16 steps strike a
- * lane is stored so (its notes on their lanes); every other sound as version 2, which older firmware reads.
- * Older firmware shows a version 3 record as empty and keeps its bytes.
- * A note pattern keeps each step's RATCH in its flags (core.h SF_RATCH, 8 | 16; 0 = x1, every older record):
- * bits firmware before RATCH drops when it loads the pattern, so the record is the same version. A drum grid
- * has no room for it (its flags are the accents): it loads x1.
- * 1.2 (P_COUNT 103: LFO 2's SYNC TRIG POL, QUANTIZE): no version bump, records map by count as above (one of 99
- * gets the four at their defaults, which play as before); firmware before reads a record of 103 by count too (its
- * 91 parameters before P_E0 and the engine's 8: the four new ones are left out). A pattern keeps no step's NUDGE (core.h
- * SF_NUDGE: its bit 4 would read as the tie here): the step on its start.
- * SPREAD (P_SPRD, #148, before 1.2's release) made it P_COUNT 104 the same way: a record of 103 gets SPREAD 0.
- * 1.5: the INSERT (P_ITYPE .. P_IMIX), ANALOG's filter TYPE and ENV SYNC (P_FTYPE, P_ESYNC) made it 111 the same way:
- * a record of 104 gets the INSERT OFF, LP and OFF; 1.2 .. 1.4 read a record of 111 by count (the seven left out).
- * A record of engine 1 (DIGITAL, retired in 1.0) stays as it is (UP_PUT takes it too): its values are DIGITAL's,
- * and every load converts them to an FM6 sound with its own patch (ui.c fm4_apply, fm4_convert.c); lists count it
- * with FM6's (up_engine).
+ * Versions: a bank whose magic, record size or slot count differ reads as empty; so does a record with another layout
+ * version. A record keeps np = the P_COUNT it was stored with; when that differs from today's it is mapped by count:
+ * its last 8 values are P_E0..P_E7, the first np - 8 are P_LEVEL.. in order, and parameters it does not have take
+ * their defaults. That holds as long as common parameters are only ever added just before P_E0 (WaveStorm's filter
+ * did so; else bump UP_VER and translate). Versions 1..3 stored a 16-bit value in every pair, 4 and 5 a byte
+ * (+ 64); version 3 / 5 (UP_VER_GRID) is a record whose pattern is one of Felucca's drum grids (note[i] step i's lane
+ * hits, flags[i] their accents), which the editor protocol can still send: it is read, its pattern taken as notes.
+ * A record of engine 1 and up (Felucca's other engines) reads as empty (up_valid: r->engine < NENGINES); one of
+ * engine 0, which was Felucca's ANALOG, is taken as a STORM sound (its values mapped by count: it sounds unlike it).
  *
  * With -DUP_HOST (host test) only the part above #ifndef UP_HOST is built;
  * it needs nothing but core.h. */
 #define UP_PER_BANK 16u
 #define UP_PMAX 72u                              /* room for P_COUNT to grow */
 #define UP_USED 0xA5u
-#define UP_VER 4u                                /* 2 since 1.0; 1 is read too (PHYS MODEL 2 was DUST) */
-#define UP_VER_GRID 5u                           /* 2 with a drum grid as the pattern (see the top) */
+#define UP_VER 4u                                /* (1..3 are read too: 16-bit values) */
+#define UP_VER_GRID 5u                           /* 4 with a drum grid as the pattern (see the top) */
 #define UP_BANK_MAGIC 0x31425055u                /* "UPB1" */
 typedef struct {
     uint8_t used, ver, engine, np;               /* UP_USED, UP_VER, engine, P_COUNT when stored */
@@ -74,7 +46,7 @@ static up_rec_t *up_rec(uint32_t k) { return &up_bank[k / UP_PER_BANK].r[k % UP_
  * neither), so every record of before holds 0 there (CAT_NONE: listed by its engine, cat_of_engine) and firmware
  * before keeps the byte (a bank is written whole) without reading it: no format change, no version bump. A record of
  * versions 1..3 (a 16-bit value in every pair) has none; giving it one (a rename) rewrites it as version 4 / 5 when its
- * values fit a byte (up_to_v4; not a version 1 PHYS sound, whose MODEL 2 means DUST) */
+ * values fit a byte (up_to_v4) */
 #define UP_CAT_AT (UP_PMAX * 2u - 1u)
 #include "category.c"
 static uint32_t up_cat_of(const up_rec_t *r)
@@ -119,15 +91,6 @@ static void up_set_value(up_rec_t *r, uint32_t k, int16_t v)
 {
     if (r->ver >= 4u) r->packed[k] = (uint8_t)(v + 64); else r->p[k] = v;
 }
-/* Legacy PHYS drums map through decoded parameters, not their disk representation. */
-static void up_migrate(up_rec_t *r)
-{
-    int16_t e[8]; uint32_t k;
-    (void)e; (void)k; (void)r;                  /* (STORM's records need no migration) */
-    return;
-    if (!up_valid(r)) return;
-    for (k = 0; k < 8u; k++) e[k] = up_value(r, r->np - 8u + k);
-}
 
 static void up_pat_norm(uint8_t *note, uint8_t *flags);
 /* after loading bank b (len bytes, -1 = none): wrong shape -> empty; each record's pattern inside its fields, as
@@ -143,7 +106,6 @@ static void up_bank_check(uint32_t b, int len)
         up_rec_t *r = &bk->r[i];
         if (!up_valid(r))
             continue;
-        up_migrate(r);
         for (k = 0; k < 16u; k++)
             if (up_grid(r))
                 r->flags[k] &= r->note[k];          /* a drum grid: accents only on its hits */
@@ -261,7 +223,6 @@ static int up_parse(const uint8_t *a, uint32_t na, up_rec_t *r, uint32_t *slot)
     }
     if (na == end + 18u)
         up_set_cat(r, a[end + 17u]);
-    up_migrate(r);                               /* (an editor of before the DRUM engine) */
     *target = *r;
     return 0;
 }
@@ -276,7 +237,7 @@ static void up_values(const up_rec_t *r, int16_t *v)   /* mapped and clamped for
         def[i] = param_desc_of(r->engine, i)->def;
     up_params(r, v, def);
     for (i = 0; i < P_COUNT; i++)
-        v[i] = (int16_t)param_fit(param_desc_of(r->engine, i), v[i]);   /* (a retired KIT: the kit it plays) */
+        v[i] = (int16_t)param_fit(param_desc_of(r->engine, i), v[i]);
 }
 
 
@@ -357,7 +318,7 @@ static void up_slot_label(char *b, uint32_t k)  /* "U07" */
     b[3] = 0;
 }
 
-/* the automatic name of engine e's sound in slot k: engine name + slot number ("ANALOG 07"); b holds 13 */
+/* the automatic name of engine e's sound in slot k: engine name + slot number ("STORM 07"); b holds 13 */
 static void up_auto_name(char *b, uint32_t e, uint32_t k)
 {
     char l[4];
@@ -426,7 +387,8 @@ static int up_rename_cat(uint32_t k, const char *name, uint32_t cat)
 
 static void up_pat_load(track_t *t, uint32_t k);
 static uint32_t up_pat_rank(uint32_t slot);
-/* WaveStorm: a user preset is the whole part but its mix: slot k -> the sound, the ARP, SCL, CHORD, SLICER and pattern
+/* WaveStorm: a user preset is the whole part but its mix: slot k -> the sound (with its own path and sequences), the
+ * ARP, SCL, CHORD and pattern
  * settings, and the record's 16-step pattern when it holds one (else the steps stay); LEVEL PAN MUTE stay. One undo
  * (SAVE held) takes it all back. 0 ok, 1 empty */
 static int up_load(uint32_t k)

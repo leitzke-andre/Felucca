@@ -34,8 +34,8 @@ static const param_desc_t ESYNC_DESC[3] = {   /* ATK DEC REL with ENV SYNC on: t
     {"REL", F_INT, 0, 127, 60, ESYNC_NAMES, 0},
 };
 static uint32_t esync_idx(int32_t v) { return (uint32_t)(v & 127) * ESYNC_N >> 7; }   /* (param_format's split) */
-/* seq.c kb_map; 1 = SNAP (stored projects: the former ON); 3 = SEQ: SNAP, and the sequencer's notes snap too as
- * they play (seq.c seq_step; the steps keep what was written). Append-only: older projects hold 0..2 */
+/* seq.c kb_map; 1 = SNAP (the former ON); 3 = SEQ: SNAP, and the sequencer's notes snap too as they play (seq.c
+ * seq_step; the steps keep what was written). Append-only: older stored sounds hold 0..2 */
 static const char *const N_QUANT[] = {"OFF", "SNAP", "WHITE", "SEQ", "SEQ+T"};
 /* chord keys (chord.c): OFF, the diatonic triad / seventh of the track's ROOT and SCALE on the key, fixed shapes */
 static const char *const N_CHRD[] = {"OFF", "DIA3", "DIA7", "MAJ", "MIN", "DOM7", "MAJ7", "MIN7", "SUS4", "POW"};
@@ -183,19 +183,18 @@ static const param_desc_t GP[G_COUNT] = {
      * INFO's now (ui_menu.c). Kept: the ids and G_COUNT are fixed by the formats and the protocol */
     [G_MIDI] = PE("MIDI", N_MIDI_INPUT, 0),
     [G_SYNC] = PE("SYNC", N_DASH, 0),
-    /* MIDI IN's routing, edited on MENU > MIDI > MIDI IN (1.2: menu_items.c MI_MIDIIN; up to 1.1.5 GLO > SYSTEM ROUT),
-     * stored with the project as before. (was "--": stored 0 = CH1-4, as MIDI IN always was) */
+    /* MIDI IN, edited on MENU > MIDI > MIDI IN (menu_items.c MI_MIDIIN): the channel, or OMNI; kept with the part
+     * (the autosave) */
     [G_ROUTE] = PE("ROUT", N_ROUTE, 0),
     [G_INFO] = PD("CPU", F_INT, 0, 0, 0),
     [G_ENGSEL] = PE("ENG", N_ENGNAME, 0),
     [G_ENGGO] = PE("SET", N_GO, 0),
     [G_CLRSEQ] = PE("CLRSQ", N_GO, 0),
     [G_INITSND] = PE("INIT", N_GO, 0),
-    /* the reverb's model on the REVERB page: the id of the old GM drum channel (G_DRCH, inert since 1.0) */
-    [G_RTYPE] = PE("TYPE", N_RTYPE, 2),         /* HALL at power-on since 1.2 (ROOM before; projects keep theirs) */
-    /* inert: they set the GM drum part (level, reverb send), which is gone (drums are the DRUM engine
-     * on any part). On no page; kept so the ids and G_COUNT, which the project format and the
-     * editor protocol depend on, do not move */
+    /* the reverb's model on the REVERB page: the id of Felucca's old GM drum channel (G_DRCH, inert since 1.0) */
+    [G_RTYPE] = PE("TYPE", N_RTYPE, 2),         /* HALL at power-on since 1.2 (ROOM before) */
+    /* inert: they set Felucca's GM drum part (level, reverb send), long gone. On no page; kept so the ids and G_COUNT,
+     * which the editor protocol depends on, do not move */
     [G_DRLVL] = PD("-", F_INT, 0, 0, 0),
     [G_DRREV] = PD("-", F_INT, 0, 0, 0),
 };
@@ -215,34 +214,28 @@ static const param_desc_t *track_desc(const track_t *t, uint32_t id)
 }
 
 /* the descriptor of parameter id for engine e without the engine's desc hook (the device display
- * only; range and default are the same): what the editor protocol, user presets and projects use */
+ * only; range and default are the same): what the editor protocol, user presets and the autosave use */
 static const param_desc_t *param_desc_of(uint32_t e, uint32_t id)
 {
     return id >= P_E0 ? &ENGINES[e]->edit[id - P_E0] : &TP[id];
 }
 
-/* a retired F_ENUM value kept as an alias, so stored values stay valid: SAMPLE SET and GRAIN SRC 1, once
- * TRANH, and 4, once PERC (a SAMPLE sound of it loads as DRUM: core.h drum_from_perc), play PIANO
- * (tools/gen_samples.py SMP_SET_ORIG); DRUM KIT 1..3, once HAND CYM H+CYM, play 66 10 77 (eng_drum.c DK_PLAYS).
- * It shows the original's name; knobs step over it and the editor's SET lands on the original. -> the value v
- * stands for */
+/* a retired F_ENUM value kept as an alias, so stored values stay valid (Felucca had some): -> the value v stands for.
+ * It would show the original's name; knobs step over it and the editor's SET lands on the original. None in STORM */
 static int32_t enum_orig(const param_desc_t *d, int32_t v)
 {
     (void)d;
     return v;                                   /* (STORM's lists have no aliases) */
 }
 
-/* a stored value as the parameter takes it (projects, user presets, motion): inside d's range, and a retired
- * DRUM KIT (1..3) as the kit it plays, so KIT never holds one again. (SAMPLE / GRAIN's aliases keep their
- * number: they are what the sound was saved with, and play the original anyway.) FM6's SLOT is never stored as a
- * bank slot: 9..40 (1.4.1's B1..B32; 1.0.2's B1..B27 were 8..34) is 8, OWN, and the patch comes with what is loaded */
+/* a stored value as the parameter takes it (user presets, the autosave, motion): inside d's range */
 static int32_t param_fit(const param_desc_t *d, int32_t v)
 {
     v = clamp(v, d->min, d->max);
     return v;
 }
 
-/* v is a value a knob passes over: an alias, or one of FM6's bank slots without a voice */
+/* v is a value a knob passes over: an alias (enum_orig; none in STORM) */
 static int enum_skip(const param_desc_t *d, int32_t v)
 {
     return enum_orig(d, v) != v;
@@ -405,7 +398,7 @@ static void param_format(const param_desc_t *d, int32_t v, char *val, const char
 /* ------------------------------------------------------------ pages --- */
 enum { FAM_HOME, FAM_ENV, FAM_LFO, FAM_FX, FAM_SCL, FAM_EDIT, FAM_GLO, FAM_SAVE, FAM_ARP, FAM_SEQ, FAM_TRK,
        FAM_COUNT };
-enum { SC_TRACK, SC_GLOBAL, SC_ENGINE, SC_STEP, SC_TRK };   /* SC_TRK: the TRACKS page (ui_input.c tracks_edit) */
+enum { SC_TRACK, SC_GLOBAL, SC_ENGINE, SC_STEP };
 enum { GR_NONE, GR_ADSR, GR_LFO, GR_STEPS, GR_ARP, GR_SCALE, GR_FX, GR_ROLL, GR_BROWSE, GR_USER,
        GR_MOD, GR_PATS, GR_TOOLS, GR_CHORD, GR_EVENTS, GR_INS, GR_VECT,
        GR_WSPATH, GR_WSPSET, GR_WSSEQ, GR_WSSTEP, GR_WSSSET };   /* (GR_WS*: ui_wsedit.c's pages) */   /* (GR_STEPS: SEQ > PATTERN's knobs;
@@ -447,7 +440,7 @@ static const page_t PAGES[] = {
     /* 1.2 (Discussion #153): a family's pages go round in this order, a tap of its button each (ui.c open_family) */
     {"CLOCK", FAM_GLO, SC_GLOBAL, GR_NONE, {G_BPM, G_SWING, G_CLOCK, 0xFF}},
     /* SAVE's taps (1.5, #173): USER (SAVE from another page: the quick save, SAVE OCT+ OCT+), PRESETS (the engines and
-     * sounds one tap on; up to 1.4.1 the last), PHRASES, PROJECT, TOOLS */
+     * sounds one tap on; up to 1.4.1 the last), PHRASES, TOOLS */
     {"USER", FAM_SAVE, SC_GLOBAL, GR_USER, {0xFF, 0xFF, 0xFF, 0xFF}},       /* user presets: SLOT LOAD ERASE SAVE */
     {"PRESETS", FAM_SAVE, SC_GLOBAL, GR_BROWSE, {0xFF, 0xFF, 0xFF, 0xFF}},   /* browser: PRESETS knob / KNOB 1 */
     {"PHRASES", FAM_SAVE, SC_GLOBAL, GR_PATS, {0xFF, 0xFF, 0xFF, 0xFF}},    /* pattern loader: PAT LOAD (ui.c pat_load);
@@ -457,10 +450,10 @@ static const page_t PAGES[] = {
     {"ARP 2", FAM_ARP, SC_TRACK, GR_NONE, {P_ASWING, P_APROB, P_AHOLD, P_AORDER}},
     {"STEP", FAM_SEQ, SC_STEP, GR_ROLL, {0, 1, 2, 3}},
     {"PATTERN", FAM_SEQ, SC_TRACK, GR_STEPS, {P_SLEN, P_SDIV, P_SSWING, P_SGATE}},   /* (Felucca had these on SEQ TOOLS) */
-    {"AUTOMATION", FAM_SEQ, SC_TRACK, GR_EVENTS, {0xFF, 0xFF, 0xFF, 0xFF}},  /* the locks, events, CHANCE and RATCH as a
-                                                                             * list, PLAY and CLEAR (ui_events.c) */
-    /* HOME's pages (1.2): HOME tapped on HOME the MIXER (up to 1.1.5 GLO's; LEVEL PAN REV MUTE), again CLOCK (up to 1.1.5
-     * GLO > GLOBAL; its TUNE is MENU > AUDIO's now), again HOME (ui.c home_tap) */
+    {"AUTOMATION", FAM_SEQ, SC_TRACK, GR_EVENTS, {0xFF, 0xFF, 0xFF, 0xFF}},  /* the locks, events and VEL as a list,
+                                                                             * PLAY and CLEAR (ui_events.c) */
+    /* HOME's pages (1.2): HOME tapped on HOME OUTPUT (the part's mix; Felucca's MIXER), again CLOCK (its TUNE is MENU >
+     * AUDIO's), again HOME (ui.c home_tap) */
     {"OUTPUT", FAM_TRK, SC_TRACK, GR_NONE, {P_LEVEL, P_PAN, P_SPRD, P_MUTE}},
     {"CLOCK", FAM_TRK, SC_GLOBAL, GR_NONE, {G_BPM, G_SWING, G_CLOCK, 0xFF}},
 };
@@ -474,7 +467,7 @@ static const param_desc_t *page_desc(const page_t *pg, uint32_t slot, int16_t **
         *valp = 0;
         return 0;
     }
-    if (pg->scope == SC_STEP || pg->scope == SC_TRK) {
+    if (pg->scope == SC_STEP) {
         *valp = 0;
         return 0;
     }

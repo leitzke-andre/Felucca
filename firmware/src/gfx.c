@@ -47,7 +47,7 @@ typedef struct { uint16_t off; uint8_t w; const char *label; } kc_t;
 #ifndef GFX_HOOK_RULE
 #define GFX_HOOK_RULE(x, y, w, h) ((void)0)        /* a divider drawn on the screen (ui_draw.c lcd_rule): no box may touch it */
 #endif
-/* the alignment check (tests/ui_render.c): GFX_HOOK_ALIGN declares that the next item(s) drawn (a text, an icon, a
+/* the alignment check (Felucca's tests/ui_render.c, not in this tree): GFX_HOOK_ALIGN declares that the next item(s) drawn (a text, an icon, a
  * keycap, a cushion) are meant to sit centred in the box x0..x1, y0..y1 (canvas drawing coordinates, x1 y1 past it)
  * along AL_H and / or AL_V; AL_N(n): the next n items together. A text's ink is measured across (its glyphs' boxes)
  * and its capitals' band up and down (GFX_HOOK_PEN: its line top and face); an icon's ink from its cell
@@ -76,7 +76,6 @@ static int32_t cv_oy;            /* y offset for graph drawing */
 static int16_t cv_cy0, cv_cy1;   /* text clip: canvas rows cv_cy0 .. cv_cy1 - 1 (cv_begin: the whole canvas) */
 static uint8_t cv_flip;          /* cv_alpha_hc: the cell mirrored left <-> right (the header's metronome, ui_draw.c) */
 
-#define RGB(r, g, b) ((uint16_t)((((r) >> 3) << 11) | (((g) >> 2) << 5) | ((b) >> 3)))
 
 /* ------------------------------------------------------------- theme --- */
 /* Five stored colours per palette (color1 color2 color3 primary secondary), the rest derived with fixed blends
@@ -189,7 +188,6 @@ static uint32_t palette_from_stored(uint32_t v)
     return v < 20u ? UI_PALETTE_MIGRATE[v] : UI_GREY_INDEX;
 }
 static uint32_t palette_to_stored(uint32_t i) { return UI_PAL_TAG + i % NPALETTES; }
-static int palette_stored_ok(uint32_t v) { return v < 20u || (v >= UI_PAL_TAG && v - UI_PAL_TAG < NPALETTES); }
 
 static inline uint16_t swap16(uint32_t c) { return (uint16_t)(((c >> 8) & 0xFFu) | ((c & 0xFFu) << 8)); }
 
@@ -218,13 +216,6 @@ static void cv_blit(uint32_t x, uint32_t y)
     lcd_blit(x, y, cv_w, cv_h, cv_px);
 }
 
-/* canvas rows r0 .. cv_h-1 only, to screen row y + r0 */
-static void cv_blit_from(uint32_t x, uint32_t y, uint32_t r0)
-{
-    GFX_HOOK_BLIT(x, y, r0);
-    if (r0 < cv_h)
-        lcd_blit(x, y + r0, cv_w, cv_h - r0, cv_px + r0 * cv_w);
-}
 
 static inline void cv_pset(int32_t x, int32_t y, uint16_t c)
 {

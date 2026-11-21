@@ -85,6 +85,11 @@ else
     echo "== update loader: skipped (no JieLi AC79 SDK in AC79_SDK)"
 fi
 run "package flash boundaries (synthetic SDK)" python3 tests/fm1pkg_test.py
+if command -v node > /dev/null; then
+    run "web installer: fm1pkg.js and fm1ota.js against a simulated FM-1" node web/test_install.mjs
+else
+    echo "== web installer: skipped (no node)"
+fi
 run "installer CLI (fm1_install.py) against a simulated FM-1" python3 tests/install_test.py
 $PC -o $H/text_ref_test tests/text_ref_test.c -lm
 run "text: pens, kerning and pixels equal the reference renderer" $H/text_ref_test

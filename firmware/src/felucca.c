@@ -44,8 +44,8 @@
                                     * faults to it); every reset holds it first either way (chip/fm1_sys.h) */
 #define FM1_CPU1_FALLBACK 1        /* a misread, a fault or a late job: core 1 retired, one core until power-off (and
                                     * main.c turns 2ND CORE off), not a restart: as Felucca's own second core did */
-#define FM1_CRASH_CTX_N 1u         /* chip/fm1_irq.h: the registers of the last crash only (80 B of .noinit; four would
-                                    * not fit beside the project slots) */
+#define FM1_CRASH_CTX_N 1u         /* chip/fm1_irq.h: the registers of the last crash only (80 B of .noinit; four did
+                                    * not fit in Felucca's RAM) */
 #ifndef FELUCCA_VERSION
 #define FELUCCA_VERSION "v1.8.2" /* shown in the menu, the console and the editor; build.py --release X.Y */
 #endif
@@ -105,7 +105,7 @@ static __attribute__((noinline)) int c1_wait(void) { return fm1_cpu1_wait(); }  
 #include "ui_draw.c"
 #include "ui_menu.c"
 #include "ui_input.c"
-#include "ui_layer.c"              /* the quick layers (FX GLO SCL EDIT REC held; SEQ TOOLS: ui_tools.c) */
+#include "ui_layer.c"              /* the quick layers (FX GLO SCL EDIT REC held) */
 
 /* --------------------------------------------- storage, update, editor --- */
 #if FELUCCA_FLASH
@@ -114,7 +114,7 @@ static __attribute__((noinline)) int c1_wait(void) { return fm1_cpu1_wait(); }  
 #include "storage.c"
 #endif
 #include "upreset.c"             /* user presets (RAM mirror; flash with FELUCCA_FLASH) */
-#include "ws_store.c"            /* the settings and the autosave (no projects) */
+#include "ws_store.c"            /* the settings and the autosave (no projects: WaveStorm) */
 #if FELUCCA_OTA
 #include "../bsp/chip/ota.c"
 #include "ota_hw.c"

@@ -1,12 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* Felucca UI: NAME, naming a user preset or a project on the device (included by ui_input.c).
+/* NAME (Felucca's UI), naming a user preset on the device (included by ui_input.c).
  *
- * Where: SAVE > USER, SAVE (KNOB 4, OCT+) and SAVE > PROJECT, SAVE: after the OVERWRITE? dialog when the slot is
- * used, the NAME screen opens before anything is written; OCT+ writes, OCT- cancels (back to the page, nothing
- * written). EDIT on those pages renames the selected slot (only its name is written). The name is prefilled:
- * USER the sound's own (the user preset it came from) or the automatic one ("DIGITAL 14"), PROJECT the current
- * project's (as loaded or last saved; none: "PROJECT A"), so SAVE, OCT+, OCT+ saves with the default name.
+ * Where: SAVE > USER, SAVE (KNOB 4, OCT+): after the OVERWRITE? dialog when the slot is used, the NAME screen opens
+ * before anything is written; OCT+ writes, OCT- cancels (back to the page, nothing written). EDIT on that page renames
+ * the selected slot (only its name is written). The name is prefilled with the sound's own (the user preset it came
+ * from) or the automatic one ("STORM 14"), so SAVE, OCT+, OCT+ saves with the default name.
  * Writing needs the transport stopped (STOP TO SAVE; the screen stays).
  *
  * The keys type and never sound, record or send MIDI (seq.c keyboard_block: song.grid 2). Upper case, at most 12:
@@ -17,13 +16,11 @@
  *   black keys   by name, in both octaves: F# cursor left, G# SPACE, A# cursor right, C# DELETE (the character
  *                before the cursor; held: repeats, as the arrows do), D# ABC / 123.
  *   KNOB 1       the cursor; KNOB 2 the character at the cursor (SPACE A..Z 0..9 - . _ / # +; at the end: a new one).
- *   KNOB 3       (1.2, Discussion #90) USER: the sound's category (BASS LEAD PAD PLUCK KEYS DRUM FX OTHER, category.c),
+ *   KNOB 3       (1.2, Discussion #90) the sound's category (BASS LEAD PAD PLUCK KEYS DRUM FX OTHER, category.c),
  *                shown in the field's title row and written with the name (PRESETS > LIST filters by it); it starts at
  *                the slot's own (a rename) or the sound's (a save: its user preset's, its factory preset's).
- *                PROJECT: a random name, a new one each detent (an adjective and a noun, NM_RA / NM_RB; the field
- *                takes it whole, then the keys edit it as any other).
  *   LEDs         every key that types or edits is lit; the key whose letters are being cycled blinks.
- * Spaces at either end are dropped when it is written; an empty name: USER the automatic one, PROJECT none. */
+ * Spaces at either end are dropped when it is written; an empty name: the automatic one. */
 enum { NK_NONE, NK_USER_SAVE, NK_USER_RENAME };
 #define NM_LEN 12u
 #define NM_TAP_MS 800u                                 /* multi-tap: the next letter within this */
@@ -43,11 +40,10 @@ static struct {
     uint8_t tap;                                       /* .. that letter's index in its group */
     uint8_t rep;                                       /* the key (+ 1) of a held arrow / DELETE, 0 none */
     uint32_t t, rep_t;                                 /* fm1_ms of the last tap; of the next repeat */
-    uint8_t cat;                                       /* USER: the category (CAT_BASS..CAT_OTHER) KNOB 3 sets */
-    uint32_t rnd;                                      /* PROJECT: KNOB 3's random names (xorshift; 0 = not seeded) */
+    uint8_t cat;                                       /* the category (CAT_BASS..CAT_OTHER) KNOB 3 sets */
     uint32_t sig;                                      /* drawn-state cache */
     char s[NM_LEN + 1u];
-    char ph[NM_LEN + 1u];                              /* what an empty name saves as / shows ("PROJECT A") */
+    char ph[NM_LEN + 1u];                              /* what an empty name saves as / shows ("STORM 14") */
 } nm __attribute__((section(".pool")));                /* (zero-initialised; main loop only: off the audio code's .bss) */
 
 static int name_on(void) { return nm.kind != NK_NONE; }
@@ -187,37 +183,12 @@ static void nm_do(uint32_t f)                          /* a black key's function
         break;
     }
 }
-/* PROJECT, KNOB 3: random names, adjective + noun, at most 5 + 1 + 6 characters (no trademarks, no names) */
-static const char *const NM_RA[16] = {"NEON", "GLASS", "AMBER", "SOLAR", "LUNAR", "SILK", "IRON", "PALE",
-                                      "DEEP", "WILD", "QUIET", "SLOW", "GOLD", "BLUE", "DUSTY", "HAZY"};
-static const char *const NM_RB[16] = {"DRIFT", "PULSE", "ORBIT", "RIVER", "HARBOR", "TIDE", "ECHO", "GARDEN",
-                                      "SIGNAL", "MIRROR", "CANAL", "FIELD", "COAST", "CLOUD", "BLOOM", "SAIL"};
-static void nm_random(void)                            /* a new name, never the one in the field */
-{
-    char b[NM_LEN + 1u];
-    uint32_t x;
-    do {
-        x = nm.rnd ? nm.rnd : fm1_ms * 2654435761u | 1u;
-        x ^= x << 13;
-        x ^= x >> 17;
-        x ^= x << 5;
-        nm.rnd = x;
-        str_cpy(b, NM_RA[x & 15u], sizeof b);
-        str_cpy(b + str_len(b), " ", 2);
-        str_cpy(b + str_len(b), NM_RB[(x >> 4) & 15u], sizeof b - str_len(b));
-    } while (str_eq(b, nm.s));
-    str_cpy(nm.s, b, sizeof nm.s);
-    nm.len = nm.cur = (uint8_t)str_len(nm.s);
-}
 static void nm_knob(uint32_t k, int32_t s)             /* KNOB 1 the cursor, KNOB 2 the character there, KNOB 3 */
 {
     int32_t i, n = (int32_t)sizeof NM_SET - 1;
     nm_commit();
-    if (k == 2u) {                                     /* USER: the category (no wrap); PROJECT: a random name */
-        if (nm.kind <= NK_USER_RENAME)
-            nm.cat = (uint8_t)clamp((int32_t)nm.cat + s, CAT_BASS, CAT_OTHER);
-        else
-            nm_random();
+    if (k == 2u) {                                     /* the category (no wrap) */
+        nm.cat = (uint8_t)clamp((int32_t)nm.cat + s, CAT_BASS, CAT_OTHER);
         return;
     }
     if (k == 0u) {
@@ -308,7 +279,7 @@ static uint32_t name_leds(void)
 }
 
 /* ----------------------------------------------------------- drawing --- */
-/* The header stays. The card band is the name field: a SURF card, "SAVE U07" / "NAME PROJECT A" and the length,
+/* The header stays. The card band is the name field: a SURF card, "SAVE U07" / "NAME U07" and the length,
  * then 12 cells (M): the cursor an ACCENT box, the letter being cycled a THEME cell (INK), a space a DIM dot, an
  * empty name its placeholder in DIM. The panel: the cycling key's letters (the one typed THEME, the next ACCENT)
  * or a hint, and ABC / 123; the white keys as two rows of 8 pills (the left octave, then the right one; the
@@ -318,10 +289,7 @@ static uint32_t name_leds(void)
 static void nm_title(char *b)
 {
     str_cpy(b, nm.kind == NK_USER_SAVE ? "SAVE " : "NAME ", 8);
-    if (nm.kind <= NK_USER_RENAME)
-        up_slot_label(b + 5, nm.slot);
-    else
-        str_cpy(b + 5, nm.ph, 12);                     /* "PROJECT A" */
+    up_slot_label(b + 5, nm.slot);
 }
 static void nm_draw_field(void)
 {

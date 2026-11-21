@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* Felucca UI: the panel (Y_GRAPH .. Y_GRAPH + H_GRAPH) between the cards and the footer: a SURF area
- * (rounded, on BG) holding the page graphs (ADSR, LFO, steps, piano roll, drum grid, scale, FX, SLICER,
- * MOD, lists: presets, user presets, patterns, project slots, song), the HOME oscilloscope, the
- * instrument diagrams; the MIXER page draws four SURF columns instead. Each graph is redrawn only when
+/* The panel (Felucca's UI, Y_GRAPH .. Y_GRAPH + H_GRAPH) between the cards and the footer: a SURF area (rounded, on
+ * BG) holding the page graphs (ADSR, LFO, piano roll, scale, chords, FX, INSERT, MOD, AUTOMATION, lists: presets, user
+ * presets, patterns), WaveStorm's vector square (HOME, EDIT > VECT / WAVE / PATH) and lanes (EDIT > SEQ), and the
+ * oscilloscope (MENU > HOME SCOPE). Each graph is redrawn only when
  * graph_signature() changes. The look:
  * curves THEME (2 px), guides and empty marks RAISE, captions MID / DIM, the active thing ACCENT,
  * bars rounded; a list's selected row is a THEME bar with INK text. */
@@ -74,10 +74,9 @@ static int32_t bar_x(uint32_t i) { return 12 + (int32_t)(i % 16u) * 13 + (int32_
  * the highest on top; on the left the C rows named (S, DIM) and a keyboard strip (white keys RAISE, black keys a
  * shorter DIM; a key held on the track: its row ACCENT). Rows in the track's scale (SCL ROOT / SCALE; CHR: the white
  * keys) are tinted LANE, a C row closes with a RAISE line; step lines GRID, every 4th RAISE. A note is a 9 x 3 bar in
- * its column (an accent: TEXT, the row's full height; the cursor step's notes: ACCENT), chords stacked, lane hits as
- * their notes (a RATCH step's bars in its 2..4 parts, 1 px apart); a TIE carries the bars of the note before through
- * its column; a REST is empty; a slide is a TEXT diagonal from the end of its bar into the next note (not from a
- * RATCH step: it never slides out). Notes outside
+ * its column (an accent: TEXT, the row's full height; the cursor step's notes: ACCENT), chords stacked; a TIE carries
+ * the bars of the note before through its column; a REST is empty; a slide is a TEXT diagonal from the end of its bar
+ * into the next note. Notes outside
  * the view: a 1 px mark on the edge. The cursor: a TEXT column frame; the playhead: a 1 px ACCENT line. The view
  * (proll.lo, the bottom row) fits the notes of the page, else centres on the cursor's note, and follows in steps (a
  * third of the way per frame); graph_signature() holds it, so a page that does not change is not drawn again. */
@@ -93,7 +92,7 @@ static struct {
 } proll;
 static const uint8_t KEY_BLACK[12] = {0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0};
 
-static int32_t pr_note(const step_t *st, uint32_t j)   /* the step's note j (0..3), then its lane hits (-1: none) */
+static int32_t pr_note(const step_t *st, uint32_t j)   /* the step's note j (0..3), -1 none */
 {
     return j < st->n && j < 4u ? st->note[j] : -1;
 }
@@ -153,7 +152,7 @@ static void pr_follow(const track_t *t)
     proll.init = 1;
 }
 static int32_t pr_row_y(int32_t n) { return PR_Y0 + ((int32_t)proll.lo + PR_ROWS - 1 - n) * PR_RH; }
-/* a bar w px wide in `hits` equal parts, 1 px apart (a RATCH step; 1: the bar) */
+/* a bar w px wide in `hits` equal parts, 1 px apart (Felucca's ratchets; 1: the bar) */
 static void pr_split(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t c, uint32_t hits)
 {
     int32_t k, pw = (w - (int32_t)hits + 1) / (int32_t)hits;
@@ -164,7 +163,7 @@ static void pr_split(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t c, uin
     for (k = 0; k < (int32_t)hits; k++)
         cv_rect(x + k * (pw + 1), y, pw, h, c);
 }
-/* the bars of step s in column x (in its RATCH parts, hits; a TIE's carried bars: 1): a 1 px edge mark for a note
+/* the bars of step s in column x (in `hits` parts; 1: whole): a 1 px edge mark for a note
  * out of view; first: row y of the step's first note */
 static void pr_bars(const step_t *st, int32_t x, int32_t w, uint16_t c, int acc_all, int32_t *first, uint32_t hits)
 {
@@ -413,9 +412,9 @@ static uint32_t str_hash(uint32_t h, const char *s)
 
 
 
-/* MENU > LARGE's strip under the tall cards (ui.c LK_TALL): HOME's scope, ENV's ADSR, LFO's wave,
- * MIXER's tracks drawn small; on the other pages the page's title and number (their charts need the whole panel) */
-enum { SK_NONE, SK_SCOPE, SK_ADSR, SK_LFO, SK_TRK, SK_TITLE };
+/* MENU > LARGE's strip under the tall cards (ui.c LK_TALL): HOME's scope, ENV's ADSR, LFO's wave drawn small; on the
+ * other pages the page's title and number (their charts need the whole panel) */
+enum { SK_NONE, SK_SCOPE, SK_ADSR, SK_LFO, SK_TITLE };
 static uint32_t strip_kind(void)
 {
     uint32_t g;
@@ -499,7 +498,7 @@ static uint32_t graph_signature(void)
         if (ph / 16u != ui.bank)
             ph = 0xFFFFu;                            /* the roll shows the cursor's bank only */
         h ^= steps_hash(t) + ph * 31u + ui.cursor * 7919u + ui.bank * 613u;
-        {                                            /* the parameter locks' marks (the roll, the grid) */
+        {                                            /* the parameter locks' marks (the roll) */
             uint64_t lk = motion_lock_steps(trk_index(t));
             h = (h ^ (uint32_t)lk ^ (uint32_t)(lk >> 32) * 2654435761u) * 16777619u;
         }
@@ -522,8 +521,8 @@ static const char *eng_abbr(const char *name)
     return name;
 }
 
-/* a list row (17 px), in M as every list's (PRESETS, USER, PHRASES, PROJECT, AUTOMATION, MOD, the MENU): the selected
- * one a THEME bar with INK text; tag at x 14 (the widest, DRUM, to x 57), free text from x LIST_NX to x1 */
+/* a list row (17 px), in M as every list's (PRESETS, USER, PHRASES, AUTOMATION, MOD, the MENU): the selected
+ * one a THEME bar with INK text; tag at x 14 (the widest to x 57), free text from x LIST_NX to x1 */
 #define LIST_Y(k) (3 + 17 * (int32_t)(k))
 #define LIST_TY CAP_IN(M, 16)                           /* a row's text: its capitals rows 2 .. 12 of the row */
 #define LIST_NX 64
@@ -678,10 +677,9 @@ static int32_t ev_value(int32_t y, const char *v, const char *unit, uint16_t fg,
     }
     return cv_text_r(x, y + LIST_TY, &AF_M, v, fg, bg);
 }
-/* SEQ > AUTOMATION (ui_events.c): the track's rows around the one selected: PLAY first (ON / OFF and the counts),
- * QUANTIZE (ON / OFF and the steps nudged), then a row each: the kind (LOCK in the accent, AUTO; STEP: a step's CHANCE,
- * RATCH, NUDGE or VEL, a NUDGE or VEL that does not play DIM), the step, the name, the value at the right; the last row
- * + ADD (LOCK, CHANCE, RATCH, NUDGE or VEL: what OCT+ adds) */
+/* SEQ > AUTOMATION (ui_events.c): the track's rows around the one selected: PLAY first (ON / OFF and the counts), then a
+ * row each: the kind (LOCK in the accent, AUTO; STEP: a step's VEL, DIM where it does not play), the step, the name,
+ * the value at the right; the last row + ADD (LOCK or VEL: what OCT+ adds) */
 static void graph_events(void)
 {
     const track_t *t = TSEL;
@@ -759,7 +757,6 @@ static void graph_events(void)
         }
     }
 }
-static uint32_t trk_level(uint32_t c) { return (uint32_t)trk[c].p[P_LEVEL] & 127u; }   /* LEVEL 0..127 */
 /* oscilloscope of the output, triggered on a rising zero crossing: a RAISE centre line, the trace 2 px (in silence
  * a flat line on it; MENU > SCREEN OFF keeps it from staying on the panel for hours) */
 static void graph_scope(uint16_t c)

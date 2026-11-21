@@ -40,7 +40,7 @@ static uint8_t in_key;                   /* the key (+ 1) whose notes go into in
 static uint8_t kb_vel = 100;             /* 1.5.6 (#84): the keys' velocity (MENU > SELECT VEL, ui_input.c sel_play) */
 /* #191: where each track's held[i] came from, so the arp maps it again as it plays (arp_list: TRN, ROOT, SCALE, QNT as
  * they are now). held_key: the key + 1 (bits 0..4) and the octave buttons then + 3 (bits 5..7); 0: not a key's own
- * mapping (MIDI IN, the DRUM grid, an engine's own key map), held[i] plays as it is. held_dt: held[i] above the key's
+ * mapping (MIDI IN, an engine's own key map), held[i] plays as it is. held_dt: held[i] above the key's
  * note (a CHRD chord's other notes). Out of track_t: its size stays as the audio ISR's trk[] indexing wants it */
 static uint8_t held_key[NTRK][16];
 static int8_t held_dt[NTRK][16];
@@ -53,7 +53,7 @@ static volatile uint8_t clock_lost;      /* 1.8: an external clock (G_CLOCK 1 US
                                           * stopped (the UI says so) */
 static volatile uint8_t midi_hint;       /* MIDI IN played track n - 1, which is not the selected one (the UI says so) */
 static volatile uint8_t midi_seen;       /* 1.5.5 (#208): bit per track, a MIDI IN note-on played it since the UI last
-                                          * looked (ui_input.c midi_follow: the track's light, AUTO SELECT;
+                                          * looked (ui_input.c midi_take: the track's light, SCREEN WAKE;
                                           * ui.c scr_input: MENU > MIDI > SCREEN WAKE +MIDI) */
 
 static uint32_t trk_index(const track_t *t) { return (uint32_t)(t - trk); }
@@ -96,7 +96,7 @@ static int32_t scale_snap(const track_t *t, int32_t n)
 
 enum { QN_OFF, QN_SNAP, QN_WHITE, QN_SEQ, QN_SEQT };   /* P_QUANT (SEQ+T, 1.5.6 #218: appended; older firmware loads SEQ) */
 
-/* the engine's own key map (DRUM's GM map, slices) for key k, -1 none */
+/* the engine's own key map (engine_t.keys; STORM has none) for key k, -1 none */
 static int32_t kb_engine(const track_t *t, uint32_t k)
 {
     const engine_t *e = ENGINES[eng_idx(t->eng_req)];   /* (the engine it switches to) */
@@ -332,7 +332,7 @@ static __attribute__((noinline)) uint32_t arp_pick(track_t *t, uint32_t *list, u
  * gate counts down by (real time when the external transport stops: a tapped or latched note still ends) */
 static volatile uint32_t beat_pos, beat_n;      /* samples into the beat, the beat of the bar (0..3) */
 
-/* the metronome (click.c) and the count-in (1.1, Discussion #131). The click follows the song tempo's quarter notes
+/* the metronome (click.c) and the count-in (1.1, Discussion #131). The click follows the tempo's quarter notes
  * (BPM, or the external clock's 24 pulses), 4 to the bar, the first accented, whatever a track's DIV or SWING: a beat is
  * four 1/16 steps as the sequencer counts them (click_beat_len: 4 x div_samples(1/16), which may be a few samples
  * shorter than beat_samples, so the click never drifts from the 1/16 tracks it is recorded against). clk_pos and
@@ -353,7 +353,7 @@ static uint8_t cin_flush;                       /* the count-in ended in this bl
 static uint8_t cin_note[NTRK][4], cin_vel[NTRK][4], cin_n[NTRK], cin_up[NTRK];   /* kept notes; cin_up bit k: let go */
 static int seq_counting(void) { return cin_left != 0u; }
 static uint32_t click_beat_len(void) { return 4u * div_samples(2); }   /* DIV 2: 1/16 */
-static int click_wanted(void)                  /* CLICK REC: while a track is armed (not in a song: no recording) */
+static int click_wanted(void)                  /* CLICK REC: while a track is armed */
 {
     return click_mode == CLICK_ON || (click_mode == CLICK_REC && song.rec);
 }
@@ -466,7 +466,6 @@ static void arp_step(track_t *t, uint32_t n, uint32_t gate_n)
     arp_fire(t, period);
 }
 
-static void arp_tick(track_t *t, uint32_t n) { arp_step(t, n, n); }
 
 /* -------------------------------------------------------- note input --- */
 /* the length of step idx in samples: SWING (the track's + the global, at most 100) makes the even steps longer
@@ -514,7 +513,6 @@ static void rec_note(track_t *t, uint32_t note, uint32_t vel)
         s->flags |= SF_ACCENT;
     if (vel > s->vel)
         s->vel = (uint8_t)vel;
-    t->seq_active = 1;
     if (sounds) {                                   /* it sounds now: the step must not trigger it again */
         if (t->rskip_idx != idx)
             t->rskip_n = 0;
@@ -595,7 +593,7 @@ static void input_on(track_t *t, uint32_t note, uint32_t vel)
     last_note = (uint8_t)note;
     if (cin_left)
         cin_keep(t, note, vel);
-    if (rec_on(t) && !t->p[P_AMODE])               /* (ARP on: arp_tick records its notes) */
+    if (rec_on(t) && !t->p[P_AMODE])               /* (ARP on: arp_step records its notes) */
         rec_note(t, note, vel);
     if (t->p[P_AMODE])
         arp_add(t, note);
@@ -694,7 +692,7 @@ static void key_on(uint32_t k, track_t *t)
     }
     in_key = 0;
     kb_chn[k] = (uint8_t)n;
-    last_note = kb_note[k];                         /* (step entry, the SAMPLE zone: the key's note) */
+    last_note = kb_note[k];                         /* (step entry: the key's note) */
 }
 
 /* key k is up: the notes it started end, but those another key still holds */
@@ -1102,17 +1100,6 @@ static void click_tick(uint32_t adv)
     }
     if (beat && click_wanted())
         click_req = (uint8_t)beat;
-}
-/* the beat of the bar the click is on (0..3: 0 the accented first), -1 stopped: the count-in's, else the playing
- * transport's (clk_step, internal or external clock). It moves in the block a beat clicks in (the header's metronome,
- * ui_draw.c, swings on it; CLICK OFF it moves all the same) */
-static int32_t click_beat_now(void)
-{
-    if (cin_left)
-        return (int32_t)((uint32_t)(cin_total - cin_left) % 4u);
-    if (!song.playing)
-        return -1;
-    return clk_pos == CLK_START ? 0 : (int32_t)(clk_step >> 2);
 }
 
 /* everything that happens between two rendered blocks */

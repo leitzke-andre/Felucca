@@ -6,8 +6,7 @@
  *            steps or the OCT+ / OCT- hint, which come back after), ui_draw.c draw_foot
  *   a layer  while its map shows: a second footer row under the layer's own (ui_layer.c draw_layer)
  * A hint is "[KEYCAP]WORDS" up to three times (gfx.c kc_tag names the keycaps); help_parse splits it for cv_key_row.
- * Pages by their title (a page added later has none until it is written here); HOME, HOME LEVELS and the DRUM grid by
- * what they are. Every hint fits its row with every word (tests/ui_test.c test_help: no word dropped). The setting and
+ * Pages by their title (a page added later has none until it is written here); HOME by what it is. Every hint fits its row with every word (Felucca's tests/ui_test.c checked it: not in this tree). The setting and
  * the timer: ui.c help_on, help_start (PREF_HELP, ui.help_t) */
 
 static const char H_EDIT[] = "[K1-4]SOUND[EDIT]HOLD: ENGINES";
@@ -47,8 +46,7 @@ static const struct { const char *title, *hint; } HELP_PAGE[] = {
     {"TOOLS", "[K1]CLEAR[K2]INIT, CLEAN[OCT+]DO"},   /* (1.5.5, #190: KNOB 2 on, CLEAN INIT) */
     {"ARP", "[K1]MODE[KEYS]CHORD[ARP]ARP 2"},
     {"ARP 2", "[K3]HOLD[K4]ORDER[ARP]ARP"},   /* (1.8: as its card) */
-    {"STEP", "[REC]WRITE[K1]STEP[SEQ]DETAIL"},   /* (1.5.1: SEQ to DETAIL; 1.8: the keys write once armed) */
-    {"DETAIL", "[PRESETS]STEP[K1]CHANCE, 1:4, FILL"},   /* (1.5.5: the conditions past 100 %) */
+    {"STEP", "[REC]WRITE[K1]STEP[SEQ]PATTERN"},   /* (1.8: the keys write once armed) */
     {"AUTOMATION", "[K1]ROW[OCT+]DO[EDIT]DELETE"},
     {"MIXER", "[K4]MUTE[ALGO]TRACK[HOME]CLOCK"},
     {"CLOCK", "[SELECT]TEMPO[GLO]HOLD: TAP"},

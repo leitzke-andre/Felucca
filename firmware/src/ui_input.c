@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* Felucca UI input: LEDs, knobs and buttons, SEQ step entry, panel setup. */
-#include "ui_name.c"                                    /* NAME: naming user presets and projects */
+#include "ui_name.c"                                    /* NAME: naming user presets */
 /* ----------------------------------------------------------- LEDs --- */
 /* The LED picture is built off-line and copied one byte per column: clearing
  * and relighting would let the 10 kHz scan catch the dark gap and flicker. */
@@ -36,16 +36,15 @@ static void led_clear(uint8_t *nl, uint32_t id)
 }
 
 static const uint8_t FAM_BTN[FAM_COUNT] = {B_HOME, B_ENV, B_LFO, B_FX, B_SCL, B_EDIT, B_GLO, B_SAVE,
-                                           B_ARP, B_SEQ, B_HOME};   /* MIXER: HOME's (1.2); REC is transport */
+                                           B_ARP, B_SEQ, B_HOME};   /* (FAM_TRK: HOME's); REC is transport */
 
 static uint32_t cur_fam(void) { return ui.home ? FAM_HOME : cur_page()->fam; }
 
-/* 1.8 AFTERTOUCH: SENS turned on (ui_input.c): with no DEST yet, the engine's (CUT; DRUM, whose hits have no
- * filter, DIST), AMT +32; and the note that only F3 .. C5 sense pressure (the top seven keys have no converter) */
+/* 1.8 AFTERTOUCH: SENS turned on (ui_input.c): with no DEST yet, CUT (the filter's cutoff), AMT +32; and the note that only F3 .. C5 sense pressure (the top seven keys have no converter) */
 static void at_turn_on(track_t *t)
 {
     if (!t->p[P_ATDST]) {
-        t->p[P_ATDST] = MD_CUT;                         /* (STORM: CUT moves Y) */
+        t->p[P_ATDST] = MD_CUT;                         /* (the filter's cutoff) */
         t->p[P_ATAMT] = 32;
     }
     ui_message("AT: F3-C5 KEYS ONLY");
@@ -59,14 +58,14 @@ static int layer_set_open(void);                       /* (ui_layer.c) */
 #define OCT_BREATH 4u
 #define OCT_BREATH_DN 8u                                /* OCT- breathing (the menu: the previous value) */
 /* MOMENTARY (1.2, Discussions #72 / #73): LFO held, the knobs' changes are temporary. KNOB 1..4 on HOME and on the
- * sound and FX pages (a value of the selected track or a global sound / FX one, as edit_param sets it; MIXER's LEVEL
- * PAN REV MUTE too, #195; not on the action pages, the lists, STEP, AUTOMATION or SONG, where the knobs pick) change
+ * sound and FX pages (a value of the selected track or a global sound / FX one, as edit_param sets it; not on the
+ * action pages, the lists, STEP, AUTOMATION or the PATH / SEQ editing pages, where the knobs pick) change
  * their value as ever, and each value turned is put back as it was when LFO is let go: hold LFO, sweep the filter,
  * let go, it snaps back. OCT+ while
  * LFO is still held KEEPS them (the changes stay, nothing is put back; OCT+ breathes while something would go back;
  * LFO has no LED). LFO's tap (its page) is dropped once any knob turned with it; LFO alone still opens LFO. Temporary
- * turns are not recorded as automation (motion_capture) and take no undo; a sound or project load meanwhile (the
- * PRESETS knob, the editor, a song's section) puts that track's values (and the global ones) back first (mom_back: the
+ * turns are not recorded as automation (motion_capture) and take no undo; a sound load meanwhile (the PRESETS knob,
+ * the editor) puts that track's values (and the global ones) back first (mom_back: the
  * undo copy holds the sound as it was, the load's sound stays after). The menu, a dialog, NAME or a layer opening put
  * them back too. Up to MOM_N values at a time ("MOMENTARY FULL" past them: the turn does nothing). LFO held did
  * nothing (it is no layer; OCT- is the octave and a layer's UNDO, so not it), so no gesture changes: LFO + a knob
@@ -86,10 +85,6 @@ static int mom_turn(uint32_t k, int32_t s)
     const track_t *t = TSEL;
     if (ui.home) {
         d = home_param(k, &vp);
-    } else if (pg->scope == SC_TRK && !lock_held()) {  /* MIXER (#195): the selected track's LEVEL PAN REV MUTE */
-        static const uint8_t MIX_ID[4] = {P_LEVEL, P_PAN, P_REV, P_MUTE};   /* (tracks_edit's knobs) */
-        vp = &TSEL->p[MIX_ID[k & 3u]];
-        d = &TP[MIX_ID[k & 3u]];
     } else {
         if (act_cols() || lock_held() || !(pg->scope == SC_TRACK || pg->scope == SC_ENGINE || pg->scope == SC_GLOBAL) ||
             pg->graph == GR_EVENTS || pg->graph == GR_BROWSE || pg->graph == GR_USER ||
@@ -220,7 +215,7 @@ static uint32_t play_leds(void)
     return m | midi_leds(t);
 }
 
-/* Discussion #89: on SEQ > STEP (the piano roll; the DRUM grid has its own map) while stopped, the keys of the
+/* Discussion #89: on SEQ > STEP (the piano roll) while stopped, the keys of the
  * notes stored in the cursor step, bit k = key k: as play_leds, where the keys play that note now (kb_map: the
  * octave, TRN, QNT), the lowest key that gives it; a note no key plays is not shown, nor a REST step's. Playing,
  * the keys show what plays (play_leds) instead. Read from the step: no state of its own */
@@ -246,7 +241,7 @@ static uint32_t step_leds(void)
     return m;
 }
 
-/* 1: the keys show a map of their own (NAME, a layer's map: SCL's scale, FX; the DRUM grid, SLICES), lit or
+/* 1: the keys show a map of their own (NAME, a layer's map: SCL's scale, FX), lit or
  * dark; 0: the keys held and the notes playing, over the idle glow */
 static int keys_own(void)
 {
@@ -256,7 +251,7 @@ static int keys_own(void)
 /* Discussion #127 (1.2): MENU > SCALE LEDS ON, the keys of the selected track's scale (ROOT, SCALE), bit k = key k, as
  * the keys play now: the note a key gives with TRN (QNT SNAP / SEQ: the key's own note; the others round down onto
  * the scale); QNT WHITE every white key (they walk the scale; the black ones are silent). *root: the keys of the
- * scale's root. None where the engine maps the keys itself (DRUM's GM map, the slices): 0 there, and OFF */
+ * scale's root. None where the engine maps the keys itself (engine_t.keys; STORM does not): 0 there, and OFF */
 static uint32_t scale_leds(uint32_t *root)
 {
     const track_t *t = TSEL;
@@ -287,7 +282,7 @@ static uint32_t scale_leds(uint32_t *root)
 /* MENU > ANIM IDLE (1.2, Discussion #135): after IDLE_LEDS_MS without panel input (ui.c scrn.idle: a button or key
  * pressed or held, a knob turned; what SCREEN OFF counts) the LEDs play the idle animation (bsp/boards/fm1/fm1_led_anim.h
  * fm1_idle_level: a soft light drifting over the keys and back, the buttons breathing with it; the scan draws it,
- * bsp/boards/fm1/fm1_input.h fm1_led_idle_start). Only with nothing going on: stopped (no count-in, no song, nothing armed or
+ * bsp/boards/fm1/fm1_input.h fm1_led_idle_start). Only with nothing going on: stopped (no count-in, nothing armed or
  * waiting to start), no layer (held or locked), menu, dialog, NAME or UPDATE countdown, no key held or lit by the
  * selected track (MIDI IN notes), not with ANIM OFF. Any input ends it at once and is not swallowed (as SCREEN OFF's
  * wake would be): a key or a button down ends it in the scan before its next frame (the press acts as ever), a knob
@@ -308,9 +303,8 @@ static int idle_leds(void)
         fm1_led_idle_start(settings_leds == LEDS_DIM || settings_leds == LEDS_DIM_LO);
     return fm1_led_idle_on();
 }
-/* the key LEDs, bit k = key k: NAME's keys, the layer's map, the DRUM grid, else the keys held and the notes
- * the selected track's sequencer, ARP and MIDI IN play, on STEP while stopped the cursor step's notes (#89; and
- * on SLICES the keys of the selected slice; on SONG the key of the cell's slot, 1.2) */
+/* the key LEDs, bit k = key k: NAME's keys, the layer's map, else the keys held and the notes the selected
+ * track's sequencer, ARP and MIDI IN play, on STEP while stopped the cursor step's notes (#89) */
 static uint32_t key_leds(uint32_t *br)                 /* (*br: a layer's keys that breathe, layer_leds) */
 {
     uint32_t c;
@@ -329,13 +323,9 @@ static uint32_t key_leds(uint32_t *br)                 /* (*br: a layer's keys t
  * buttons of the black FM-1 can be found in the dark; bsp/boards/fm1/fm1_input.h fm1_led_dim, a short pulse each frame).
  * MENU > LEDS: DIM HI (default) that glow, DIM LO a darker one (fm1_led_dim_level), OFF no glow (as 1.0); INV
  * turns it around, as the stock firmware: the idle ones fully lit, the active ones dark, no glow (the ARP beat:
- * lit / dark). The keys' own maps (keys_own) stay lit or dark in every mode: their dark keys read as dark; only the
- * DRUM grid's keys that do something (grid_glow) glow under it, so STEP on a DRUM track is never a dark
- * keyboard (the steps of an empty pattern); on it the first step of each four (grid_beats: 1 5 9 13 of a page, where
- * no hit shows) glows steadier and brighter, so a bar's beats can be counted: DIM HI / DIM LO the mid level
- * (bsp/boards/fm1/fm1_input.h fm1_led_mid: lit 1 frame in 8, DIM LO in 12, over the glow), OFF and INV the glow alone (no
- * other key glows there). 1.2, MENU > SCALE LEDS ON (scale_leds; not over a map of the keys' own, nor on a DRUM or
- * SLICE track): the keys of the selected track's scale glow and the others are dark, the root's at the mid level, in
+ * lit / dark). The keys' own maps (keys_own) stay lit or dark in every mode: their dark keys read as dark. The mid level
+ * (bsp/boards/fm1/fm1_input.h fm1_led_mid: lit 1 frame in 8, DIM LO in 12, over the glow) marks a scale's root.
+ * 1.2, MENU > SCALE LEDS ON (scale_leds; not over a map of the keys' own): the keys of the selected track's scale glow and the others are dark, the root's at the mid level, in
  * DIM HI, DIM LO and OFF alike (asked for: OFF only takes the other glow away); INV turns it around as it does the
  * rest: the root's keys lit, the scale's at the mid level, the others glowing; the keys held and playing as ever
  * (lit, INV dark). Each picture is built off-line and copied one byte per column, the
@@ -393,9 +383,8 @@ static void ui_leds(void)
             nl[c] = inv ? 0u : iv[c];
         }
         nd[c] = mode == LEDS_DIM || mode == LEDS_DIM_LO ? (uint8_t)(nd[c] | og[c]) : nm[c];   /* OFF, INV: no glow but */
-        if (mode != LEDS_DIM && mode != LEDS_DIM_LO)    /* the grid's beats (the one level above dark there); DIM HI */
-            nm[c] = inv ? iv[c] : 0u;                   /* / LO: the beats at the mid level over the glow; INV LO / HI:
-                                                         * INV's lit ones there */
+        if (mode != LEDS_DIM && mode != LEDS_DIM_LO)    /* the mid-level keys (OFF, INV: none; DIM HI / LO: the mid */
+            nm[c] = inv ? iv[c] : 0u;                   /* level over the glow; INV LO / HI: INV's lit ones there) */
         nd[c] |= sg[c];                                 /* SCALE LEDS: in every mode (INV: inverted above) */
         nm[c] |= sm[c];
         nm[c] &= (uint8_t)~(nb[c] | own[c]);
@@ -445,35 +434,6 @@ static int32_t accel(uint32_t role, int32_t s, int32_t range)
     return s * (int32_t)m;
 }
 
-/* MIXER page: KNOB 1 LEVEL, 2 PAN, 3 REV send, 4 MUTE of the selected track (right = ON, left = OFF: the
- * track itself is ALGORITHM's, on every page). Pattern length stays on SEQ. */
-static void tracks_edit(uint32_t slot, int32_t steps)
-{
-    track_t *t = TSEL;
-    int16_t *vp;
-    const param_desc_t *d;
-    switch (slot) {
-    case 3:
-        t->p[P_MUTE] = (int16_t)(steps > 0);
-        ml_knob(t, P_MUTE);                             /* (MIDI LEARN: picked) */
-        return;
-    case 0:
-        vp = &t->p[P_LEVEL];
-        d = &TP[P_LEVEL];
-        break;
-    case 2:
-        vp = &t->p[P_REV];
-        d = &TP[P_REV];
-        break;
-    default:
-        vp = &t->p[P_PAN];
-        d = &TP[P_PAN];
-        break;
-    }
-    *vp = (int16_t)clamp(*vp + accel(EN_K1 + slot, steps, d->max - d->min), d->min, d->max);
-    motion_capture(t, (uint32_t)(vp - t->p), *vp);
-    ml_knob(t, (uint32_t)(vp - t->p));
-}
 
 /* SEQ > STEP's piano roll: where step recording writes */
 static int roll_on(void)
@@ -518,10 +478,9 @@ static void confirm_open(uint32_t kind, uint32_t trk)
     ui.force = 1;
 }
 
-/* MENU > CONTROL > STEP PREVIEW ON (1.2, Discussion #169): on SEQ > STEP (the roll and the DRUM grid) with the transport
- * stopped, a move of the cursor by a knob (KNOB 1, PRESETS) or the grid's page keys sounds the step it lands on once,
- * on the selected track (seq.c seq_audition). Not while playing, counting in or in a song; step recording moving on
- * after its keys (seq_entry) does not; a grid key on a step neither (it edits the step, a lane key plays the lane).
+/* MENU > CONTROL > STEP PREVIEW ON (1.2, Discussion #169): on SEQ > STEP (the roll) with the transport stopped, a move
+ * of the cursor by a knob (KNOB 1, PRESETS) sounds the step it lands on once, on the selected track (seq.c
+ * seq_audition). Not while playing or counting in; step recording moving on after its keys (seq_entry) does not.
  * OFF (the default): the cursor moves silently, as before */
 static void cursor_move(int32_t c)
 {
@@ -538,11 +497,9 @@ static void cursor_move(int32_t c)
 /* ------------------------------------------------- parameter locks --- */
 /* 1.1 (Discussions #75, #53): on SEQ > STEP, hold a step and turn KNOB 1..4: the step gets a lock of the parameter
  * that knob edits on the sound page shown last (ui.plk_src: HOME's four, ENV, LFO, FX, EDIT 1 / 2, OP ENV, ..; the
- * cards show those four while a step is held, a locked value bright, the sound's own DIM). The step held: on the
- * DRUM grid its white keys (several at once: each gets the lock; a press on a hit takes it away only when let go,
- * and not at all when it was held for a lock), on the roll the step being entered (its note keys held). [EDIT]
- * tapped meanwhile clears the held steps' locks (EDIT alone still clears the step, its locks with it). Not while a
- * song plays (STOP TO EDIT). A lock is a motion record (motion.c): AUTOMATION's PLAY plays it, CLEAR clears it */
+ * cards show those four while a step is held, a locked value bright, the sound's own DIM). The step held: on the roll
+ * the step being entered (its note keys held). [EDIT] tapped meanwhile clears the held steps' locks (EDIT alone still
+ * clears the step, its locks with it). WaveStorm keeps them for X / Y per step. A lock is a motion record (motion.c): AUTOMATION's PLAY plays it, CLEAR clears it */
 static uint64_t lock_held(void)
 {
     const track_t *t = TSEL;
@@ -659,10 +616,6 @@ static void edit_param(uint32_t slot, int32_t steps)
     }
     if (pg->scope == SC_STEP) {
         step_edit(slot, steps);
-        return;
-    }
-    if (pg->scope == SC_TRK) {
-        tracks_edit(slot, steps);
         return;
     }
     if (pg->graph == GR_BROWSE) {                         /* KNOB 1: one preset, KNOB 2: the next / previous engine */
@@ -872,7 +825,7 @@ static void seq_entry(uint32_t pressed)
         n = chord_make(t, note, ch, &r, &mask);        /* (CHRD OFF, a kit: the note alone; MONO: the root) */
         if (add)
             step_toggle(t, st, ch, n);
-        else if (t->p[P_VOICE] && !ENGINES[t->engine]->oneshot) {   /* (drums: hits stack as a chord) */
+        else if (t->p[P_VOICE] && !ENGINES[t->engine]->oneshot) {   /* (a oneshot engine's hits stack as a chord) */
             st->note[0] = ch[0];
             st->n = 1;
         } else {
@@ -895,12 +848,10 @@ static void seq_entry(uint32_t pressed)
 }
 
 /* Discussions #92 / #94: the PRESETS knob by page (the menu, a dialog, NAME and the layers: ui_input before this).
- *   the SEQ pages (STEP and the DRUM grid: the step cursor; AUTOMATION: the row) and the list / action pages USER,
- *     PHRASES, PROJECT, SONG: as their KNOB 1 (the SEQ pages: a sound load there would drop the track's motion: never).
- *     1.2: with PATTERN, CHANCE and the old AUTOMATION gone, KNOB 1 is the cursor or the row on every SEQ page, so
- *     the PRESETS knob is no longer a second cursor where KNOB 1 was something else; TOOLS and SLICES: nothing
- *   HOME, PRESETS and every other page (EDIT, ENV, LFO, FX, SCL, ARP, MIXER, CLOCK, ...): the selected track's
- *     sound, one list over every engine, then the used user presets (preset_step). A sound load keeps the steps
+ *   the SEQ pages (STEP: the step cursor; AUTOMATION: the row) and the list / action pages USER and PHRASES: as their
+ *     KNOB 1 (the SEQ pages: a sound load there would drop the track's motion: never); TOOLS: nothing
+ *   HOME, PRESETS and every other page (EDIT, ENV, LFO, FX, SCL, ARP, CLOCK, ...): the selected track's sound, the
+ *     factory presets, then the used user presets (preset_step). A sound load keeps the steps
  *     (SAVE held undoes it). Up to 1.0.3 it did that on HOME and PRESETS only */
 static void presets_turn(int32_t s)
 {
@@ -959,7 +910,7 @@ static uint32_t ly_bit(uint32_t l);
 static void layer_lock_input(uint32_t pressed);
 
 /* a page button let go (they act on release; a layer's own button: layer_gesture). 1: it acted (EDIT on STEP, USER,
- * PROJECT, AUTOMATION) instead of opening a page */
+ * AUTOMATION) instead of opening a page */
 static int page_tap(uint32_t b)
 {
     uint32_t f;
@@ -1040,7 +991,7 @@ static void ui_input(void)
     uint32_t lay, combo = 0, lytap, lkeys, glo, kq = 0;
     int32_t s, sel = 0, ks[4] = {0, 0, 0, 0};
     static uint32_t lock_ms;                            /* BPM LOCK: the last locked SELECT turn (fm1_ms | 1; 0 none) */
-    midi_take();                                        /* (MIDI IN notes: lights, SCREEN WAKE, AUTO SELECT's) */
+    midi_take();                                        /* (MIDI IN notes: lights, SCREEN WAKE) */
     midi_pc_poll();                                     /* MIDI Program Change */
     perf_latch_on = fx_latch & 1u;                      /* (MENU > FX LATCH; a settings load sets it too) */
     fx_map_sync();                                      /* (the FX layer's key map: ui_layer.c, a settings load too) */
@@ -1082,7 +1033,7 @@ static void ui_input(void)
     }
     else if (!kb_layer)
         perf_kill = 0;
-    {   /* a key pressed with the button: a combo (its edge, or the ISR already took it); then not the grid's or a step's */
+    {   /* a key pressed with the button: a combo (its edge, or the ISR already took it); then not a step's */
         static uint32_t kb_seen;
         lkeys = kb_layer & ~kb_seen;
         combo = lay && (notes || lkeys);
@@ -1094,7 +1045,7 @@ static void ui_input(void)
     if (lay) {                                          /* a layer's button held: keys, knobs and buttons are combos */
         combo |= (pressed & ~ly_bit(ui.ly) &            /* (REC + PLAY: PLAY plays and REC let go soon is still */
                   ~(ui.ly == LAYER_REC ? 1u << panel.btn[B_PLAY] : 0u)) != 0u;   /* a tap, it arms: as before) */
-        notes = 0;                                      /* (the keys are the layer's, not the grid's or a step's) */
+        notes = 0;                                      /* (the keys are the layer's, not a step's) */
         if (pressed & (1u << panel.btn[B_SAVE]))       /* no UNDO, no page */
             ui.save_t0 |= 2u;
         if (pressed & (1u << panel.btn[B_HOME]))       /* no menu, no HOME */
@@ -1270,7 +1221,7 @@ static void ui_input(void)
     } else if (ui.ml.on && oct) {                          /* MIDI LEARN: OCT- clears the picked CC, OCT+ done */
         ml_oct(oct);
     }
-    song.grid = (uint8_t)keys_mode();                 /* (seq.c: the keys are the grid's) */
+    song.grid = (uint8_t)keys_mode();                 /* (seq.c: NAME's keys play nothing) */
     if (song.seq_mode && cur_page()->graph == GR_ROLL) {   /* STEP */
         if (live_rec_sel() || !((song.rec >> song.sel) & 1u))   /* armed and playing: the keys record live, not
                                                          * into the cursor step too; not armed (1.2, #133): they
@@ -1326,7 +1277,7 @@ static void ui_input(void)
             ui.hot_t = 40;
             continue;
         }
-        if (ui.home || pg->scope == SC_STEP || pg->scope == SC_TRK || page_desc(pg, k, &hv) ||
+        if (ui.home || pg->scope == SC_STEP || page_desc(pg, k, &hv) ||
             ((pg->graph == GR_USER || pg->graph == GR_MOD || pg->graph == GR_PATS) && k == 0u)) {   /* (not an empty
                                                                                                     * column) */
             ui.hot_col = (uint8_t)k;

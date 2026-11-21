@@ -84,7 +84,7 @@ static void felucca_init(void)
  * UI. The UBOOT paths never get here. */
 static uint32_t crash_seen __attribute__((section(".noinit")));   /* fm1_crash.count at the last boot */
 static uint8_t boot_clean;                    /* no crash, hang (WDT) or failed boot before this one (boot_leds):
-                                               * the sweep runs and the autosave is restored (project.c autosave_boot) */
+                                               * the sweep runs and the autosave is restored (ws_store.c autosave_boot) */
 static void boot_leds(void)
 {
     uint32_t crashed = fm1_crash.magic == FM1_CRASH_MAGIC && fm1_crash.count != crash_seen;   /* (a fault of the
@@ -256,7 +256,7 @@ static void fm1_main(void)
         felucca_dbg.stage = 1;
         ui_input();
         settings_poll();                              /* queued settings save: only while stopped */
-        autosave_poll();                              /* (1.2) the music, stopped and idle: project.c */
+        autosave_poll();                              /* (1.2) the part, stopped and idle: ws_store.c */
         felucca_dbg.stage = 2;
         ui_leds();
         ui_draw();

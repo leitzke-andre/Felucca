@@ -10,8 +10,8 @@
  *   held (not P_MUTE, never saved).
  * REV THROW / ECHO THROW (1.5.1): while held every track's reverb / delay send is full (as REV / DLY 127; perf_throw),
  * ECHO THROW also lifts the delay's feedback to 0.7 if it is lower (fx.c fx_buses); both glide in and out over 11.6 ms
- * (THR_SLOPE). Let go, the sends are the tracks' own again and what the buses hold rings out. The buses are the song's
- * (no RAM of their own); the tracks' REV / DLY / FDBK values are never touched (nothing saved, nothing recorded).
+ * (THR_SLOPE). Let go, the sends are the tracks' own again and what the buses hold rings out. The buses are the shared
+ * effects' (no RAM of their own); the tracks' REV / DLY / FDBK values are never touched (nothing saved, nothing recorded).
  * REPEAT and REVERSE start on the next 1/16 (at once while stopped); the others at once; all end when let go,
  * with a 2.9 ms ramp. Effects of different kinds stack; of the buffer ones (REPEAT, REVERSE, TAPE STOP,
  * FREEZE, OCT UP, OCT DN) the last pressed plays, and letting it go returns to the one held before.
@@ -32,7 +32,7 @@
  * last stage's output fed back (0.4) into the first; out (x + all-passed) / 2 * 0.9: two notches moving, the peaks
  * +1.6 dB, white noise -1 .. -3.5 dB. KNOB 4 DEPTH is the FLANGER's and the PHASER's level too (OCT UP /
  * DN playing: full, KNOB 4 its shimmer).
- * The buffer: its own (pb_buf, 32 KB, Felucca borrowed the SLICER's), one stereo loop of 8192 frames at 22.05 kHz
+ * The buffer: its own (pb_buf, 32 KB; Felucca borrowed its SLICER's), one stereo loop of 8192 frames at 22.05 kHz
  * (371 ms). A REPEAT 1/8 or
  * REVERSE longer than the loop at the tempo (below 81 BPM) does nothing (the map shows it dimmed).
  * KNOB 1..4 with FX: the macros FILTER (the LPF / HPF), CRUSH, THROW (the dry mix into the delay and reverb
@@ -55,8 +55,6 @@ enum { PF_R8, PF_R16, PF_R32, PF_REV, PF_LPF, PF_HPF, PF_TAPE, PF_FRZ, PF_OUP, P
 #define PF_Q (PF_REPEAT | PF_BIT(PF_REV))                      /* start on the 1/16 */
 #define PF_HARM (PF_BIT(PF_OUP) | PF_BIT(PF_ODN))
 #define PF_BUF (PF_REPEAT | PF_BIT(PF_REV) | PF_BIT(PF_TAPE) | PF_BIT(PF_FRZ) | PF_HARM)
-#define PF_MUTE (((1u << NTRK) - 1u) << PF_M1)
-#define PF_MOD (PF_BIT(PF_FLG) | PF_BIT(PF_PHS))   /* FLANGER, PHASER: their own stages after CRUSH */
 #define PB_FRAMES 8192u                       /* stereo frames in pb_buf: 371 ms at 22.05 kHz */
 #define PB_MAX (2u * PB_FRAMES)               /* the longest loop, 44.1 kHz samples */
 #define PB_TAPE 32000u                        /* TAPE STOP takes 1 beat, at most this (it lags a quarter of it) */
@@ -360,7 +358,7 @@ static __attribute__((noinline)) int perf_begin(uint32_t n)
     return 1;
 }
 
-/* a track muted by its black key: its signal ramps to 0 and back (fx.c mix_part, after the SLICER) */
+/* a track muted by its black key: its signal ramps to 0 and back (fx.c mix_part, after the INSERT) */
 static __attribute__((noinline)) void perf_mute(uint32_t k, int32_t *b, uint32_t n)
 {
     uint32_t i;

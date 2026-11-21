@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* Editor protocol: SysEx for the web editor (web/EDITOR_PROTOCOL.md; v2 = user presets + live sync,
- * v3 = four tracks: the v1 / v2 commands act on the selected track, cmds 27-30 reach any track;
+/* Editor protocol (Felucca's; WaveStorm has no web editor yet): SysEx (web/EDITOR_PROTOCOL.md; v2 = user presets + live
+ * sync, v3 = tracks: the v1 / v2 commands act on the selected track, cmds 27-30 reach any track (WaveStorm: one);
  * v4 = TRACK_PARAM (31) and the TRACK_CHANGED push (32), enabled by WATCH bit 1).
  *   F0 7D 46 4C cmd args.. F7     (7D = non-commercial ID, "FL")
  * Values are 14 bit, two 7-bit bytes LSB first, offset by 8192 (so -8192..8191).
@@ -529,7 +529,7 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
             ed_b(u ? r->note[i] & 0x7Fu : 0u);
             ed_b(u ? r->flags[i] & 0x7Fu : 0u);
         }
-        ed_b(u && up_grid(r));                  /* kind: 1 = a drum grid, then bit 7 of each step's */
+        ed_b(u && up_grid(r));                  /* kind: 1 = a drum grid (a Felucca record), then bit 7 of each step's */
         for (i = 0; u && up_grid(r) && i < 16u; i++)   /* hits (bit 0) and accents (bit 1) */
             ed_b((uint32_t)(r->note[i] >> 7) | (uint32_t)(r->flags[i] >> 7) << 1);
         ed_b(u ? up_cat_of(r) : 0u);            /* 1.2: the category (an older editor stops before it) */

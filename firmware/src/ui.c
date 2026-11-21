@@ -44,13 +44,13 @@ static uint32_t up_gen;                      /* bumped on every user bank change
 #define PREF_SERIAL_OFF 64u                    /* MENU > USB SERIAL OFF (#67): no serial console, the device enumerates as
                                                 * audio + MIDI only (usb.c usb_cdc_switch); clear in every older setting = ON */
 #define PREF_RESTORE_OFF 128u                  /* MENU > RESTORE LAST OFF (1.2, Discussion #130): no autosave written, none
-                                                * restored at power-on (project.c); clear in every older setting = ON */
+                                                * restored at power-on (ws_store.c); clear in every older setting = ON */
 #define fx_latch ui_prefs
 /* MENU > AUDIO CLICK, CLICK LEVEL, COUNT-IN (1.1, Discussion #131; click.c, seq.c): two bits each in another byte no
  * engine uses, saved with the settings: bits 0-1 CLICK (OFF REC ON), 2-3 CLICK LEVEL (stored 0 MID, 1 LOW, 2 HIGH),
  * 4-5 COUNT-IN (OFF, 1 BAR, 2 BARS); 0 in older settings = OFF / MID / OFF, so nothing clicks or counts in that did
  * not; 3 (unknown) reads as 0 (settings_persist.c puts it back). Bit 6 (1.2): MENU > SCALE LEDS ON (Discussion #127,
- * ui_input.c scale_leds; 0 in older settings = OFF). Bit 7 (1.5.5, #208): MENU > MIDI > AUTO SELECT ON */
+ * ui_input.c scale_leds; 0 in older settings = OFF). Bit 7: Felucca's AUTO SELECT (1.5.5, #208), not read */
 #define ui_rec_prefs (favorites.factory[15][28])
 #define PREF_REC 0xFF00u                       /* (menu_items.c MENU_FLAGS: a bit of ui_rec_prefs, << 8) */
 #define PREF_SCALE_LEDS (0x40u << 8)
@@ -82,7 +82,7 @@ enum { SEL_BPM, SEL_PAGE, SEL_MODW, SEL_VEL, SEL_N };
 static uint32_t sel_mode(void) { return ((ui_prefs2 >> 4) & 1u) | ((ui_prefs2 >> 5) & 2u); }
 /* MENU > DISPLAY > HOME, what the HOME page shows under its four cards: 0 VECTOR (WaveStorm's X/Y square, ui_graph.c
  * graph_vector), 1 SCOPE (the oscilloscope). A byte of its own no engine uses, saved with the settings; 0 in older
- * settings, or another value (Felucca's TRACKS and LEVELS, four-track views), reads as VECTOR */
+ * settings, or another value (Felucca's TRACKS and LEVELS views of its four tracks), reads as VECTOR */
 #define ui_home_view (favorites.factory[15][26])
 /* 1.5.6 (#212): MENU > DISPLAY > LEDS INV LO / INV HI: INV with the idle LEDs at the steady mid level (ui_input.c
  * ui_leds) instead of lit. The mode stays INV (settings_leds, panel.c: so firmware before 1.5.6 reads plain INV) and
@@ -116,7 +116,7 @@ static void rp_put(uint32_t f, uint32_t v)
 #define ui_style (favorites.factory[15][29])
 static void draw_gaps(uint32_t y, uint32_t h);        /* (ui_draw.c) */
 
-static uint8_t sync_reload;                  /* engine / preset / project / user preset loaded: editor RELOAD push */
+static uint8_t sync_reload;                  /* engine / preset / user preset / autosave loaded: editor RELOAD push */
 
 #define ACC T_THEME                /* values, curves */
 #define VAL(c) ((c) == ui.hot_col && ui.hot_t ? T_ACCENT : T_THEME)   /* the knob just turned: accent */
@@ -126,7 +126,6 @@ static uint8_t sync_reload;                  /* engine / preset / project / user
 #define Y_HEAD 0
 #define H_HEAD 24
 #define Y_LABEL 28                    /* the cards */
-#define Y_SEP_END 72
 #define CARD_W 57
 #define CARD_H 44
 #define CARD_X(c) (3 + 59 * (int32_t)(c))
@@ -169,9 +168,8 @@ static struct {
     uint8_t ppick;               /* SAVE > PHRASES: the pattern picked (pat_count list index) */
     uint16_t ev_row;             /* SEQ > AUTOMATION (ui_events.c ev_*): the row selected (0 PLAY / CLEAR, 1 QUANTIZE, the
                                   * last + ADD; 1.2: up to EV_ROWS, past 255) */
-    uint8_t ev_step, ev_id;      /* .. + ADD: the step and the parameter (or EV_CHANCE, EV_RATCH, EV_NUDGE, EV_VEL) it
-                                  * adds on */
-    uint16_t ev_keep;            /* .. the CHANCE / RATCH / NUDGE row being edited (its EVC code, 0 none): listed at its default */
+    uint8_t ev_step, ev_id;      /* .. + ADD: the step and the parameter (or EV_VEL) it adds on */
+    uint16_t ev_keep;            /* .. the VEL row being edited (its EVC code, 0 none): listed at its default */
     uint8_t ev_vel;              /* .. 1.5: the VEL rows shown (+ ADD VEL's SHOW / HIDE; off when the page is entered) */
     uint8_t uboot;               /* main.c: seconds left before UPDATE MODE (OCT- + OCT+ held), 0 = none */
     uint32_t ly_t0;              /* the layer button's press time | 1, LY_* bits (ui_layer.c layer_gesture) */
@@ -207,8 +205,8 @@ static struct {
 enum { CF_NONE, CF_CLEAR_SEQ, CF_CLEAR_TRK, CF_OVR_USER, CF_LOAD_PAT, CF_INIT_SOUND, CF_CLEAR_MOTION, CF_ERASE_USER,
        CF_CLEAN_SOUND, CF_CLEAR_ALL, CF_LEARN_CLEAR };
                                   /* ui.confirm: TOOLS' clears; SAVE over a used slot; a pattern over the user's steps;
-                                   * USER ERASE; PROJECT ERASE (1.5.5, #199); CLEAN INIT (1.5.5, #190);
-                                   * MENU > SYSTEM > CLEAR ALL (1.8, #266); PROJECT LOAD over changes not saved (1.8) */
+                                   * USER ERASE; CLEAN INIT (1.5.5, #190); MENU > SYSTEM > CLEAR ALL (1.8, #266);
+                                   * MENU > MIDI > LEARN CLEAR */
 
 /* MENU > DISPLAY > SCREEN OFF (1.1.5): after a while with no input on the panel the screen goes dark (the backlight
  * stays on: lcd.c lcd_power)
@@ -266,7 +264,7 @@ static void scr_wake_now(void)                         /* main.c: the crash scre
     scrn.idle = fm1_ms;
 }
 static uint8_t mf_seen;          /* 1.5.5 (#208): the MIDI IN notes of this pass (seq.c midi_seen, taken at every pass's
-                                  * start: ui_input.c midi_take), bit per track; AUTO SELECT's (midi_follow) */
+                                  * start: ui_input.c midi_take), bit per track: SCREEN WAKE +MIDI's */
 /* ui_input, every pass: 1 = the pass is swallowed (the screen dark or waking, or the wake gesture going on) */
 static int scr_input(uint32_t pressed, uint32_t notes)
 {
@@ -350,14 +348,14 @@ static const page_t *page_over;   /* a quick layer's own four knobs (ui_layer.c)
 static const page_t *cur_page(void) { return page_over ? page_over : &PAGES[ui.page]; }
 
 /* MENU > LARGE (#15, Discussion #80: what KNOB 1..4 do, in bigger type). Per page type:
- *   LK_TALL  HOME and the value pages (EDIT ENV LFO MOD FX SLICER SCL CHORD ARP VOICE, MIXER, CLOCK,
+ *   LK_TALL  HOME and the value pages (EDIT ENV LFO MOD FX SCL CHORD ARP VOICE FILTER, OUTPUT, CLOCK,
  *            TOOLS): tall cards (a K1..K4 keycap, the icon, the label in M, the value in L,
  *            in M or S when L is too wide or lacks a glyph for any value of the knob (#251: one size per knob,
  *            ui_draw.c span_face), the unit under it, the gauge), the panel a strip: HOME's
- *            scope, ENV's ADSR, LFO's wave, MIXER's four tracks (name, state, meter) small; the
+ *            scope, ENV's ADSR, LFO's wave small; the
  *            page's title and number in L on the others (their charts cannot be read that small);
- *   LK_LABEL the list and graph pages (PRESETS, USER, PROJECT, PHRASES, SONG, the piano roll and the drum grid,
- *            AUTOMATION, SLICES), HOME with MENU > HOME TRACKS (1.3) and the quick layers' maps: the layout as it
+ *   LK_LABEL the list and graph pages (PRESETS, USER, PHRASES, the piano roll, AUTOMATION) and the quick layers'
+ *            maps: the layout as it
  *            is, the card labels in M;
  *   LK_OFF   LARGE off; the menu (its own LARGE: ui_menu.c), the dialogs and NAME keep their own layout in every case. */
 enum { LK_OFF, LK_LABEL, LK_TALL };
@@ -428,7 +426,7 @@ static void ui_message(const char *s) { ui_say(s, ""); }
 #define MSG_NOFILE "\x01"                      /* the no-file icon (ICON_X_NOFILE) */
 
 /* Main loop only, with interrupts enabled. PLAY may be consumed between reads;
- * take one coherent snapshot before a flash operation or song preparation. */
+ * take one coherent snapshot before a flash operation. */
 static int transport_busy(void)
 {
     int busy;
@@ -463,8 +461,7 @@ static void ev_enter(void);
  * (ui_help.c, ui_draw.c draw_foot) */
 #define HELP_FRAMES 120u                       /* (~2 s at the UI's ~60 frames a second) */
 static int help_on(void) { return (ui_prefs2 & (PREF_HELP >> 16)) != 0u; }
-/* 1.5.5 (#208): a MIDI IN note into track k lights its number cushion for MLIT_MS (the header's for the selected track,
- * HOME TRACKS / LEVELS, the MIXER); midi_lit_ms[k]: fm1_ms | 1 of the last (ui_input.c midi_take), 0 none */
+/* 1.5.5 (#208): a MIDI IN note into track k lights its number cushion for MLIT_MS (the header's); midi_lit_ms[k]: fm1_ms | 1 of the last (ui_input.c midi_take), 0 none */
 #define MLIT_MS 90u
 static uint32_t midi_lit_ms[NTRK];
 static int midi_lit(uint32_t k) { return midi_lit_ms[k % NTRK] && (fm1_ms | 1u) - midi_lit_ms[k % NTRK] < MLIT_MS; }
@@ -519,10 +516,6 @@ static uint32_t note_set_len(track_t *t, uint32_t i, uint32_t want)
     return n;
 }
 
-/* ------------------------------------------------------- the DRUM grid --- */
-
-
-
 
 
 /* SEQ cursor: wraps inside the pattern length, the bank follows, a step entry ends */
@@ -555,9 +548,9 @@ static void palette_choose(uint32_t v)
     ui.force = 1;
 }
 
-/* SEQ > STEP / DETAIL follows the play position (1.6, #242, Discussion #238): a melodic pattern longer than the 16
- * steps on the screen shows the bank the playhead is in while the transport plays (ui.bank only: the cursor, the
- * pattern and the saved project are untouched; DRUM's grid keeps its bank, its keys edit what the grid shows). The
+/* SEQ > STEP follows the play position (1.6, #242, Discussion #238): a melodic pattern longer than the 16
+ * steps on the screen shows the bank the playhead is in while the transport plays (ui.bank only: the cursor and the
+ * pattern are untouched). The
  * roll is left alone ("held") from the moment a knob moves the cursor or edits the cursor's step, or step entry has the
  * keys: the bank goes back to the cursor's, so what is being edited stays on the screen. Following starts again after
  * FOLLOW_MS without that, or once the playhead has gone one pass round the pattern, whichever is first. The transport
@@ -609,9 +602,8 @@ static void note_name(char *b, uint32_t n)
     fmt_int(b + str_len(b), (int32_t)(n / 12u) - 1);
 }
 
-/* a page button tapped (1.2, Discussion #153: SEQ STEP <-> AUTOMATION, GLO SONG (its only page: GLOBAL became HOME's
- * CLOCK, SYSTEM went to the MENU), SAVE USER -> PRESETS -> PHRASES -> PROJECT -> TOOLS (1.5, #173: PRESETS second; up
- * to 1.4.1 the last); HOME: home_tap). From another
+/* a page button tapped (1.2, Discussion #153: SEQ STEP -> PATTERN -> AUTOMATION, GLO CLOCK, SAVE USER -> PRESETS ->
+ * PHRASES -> TOOLS (1.5, #173: PRESETS second); HOME: home_tap). From another
  * family the family's page shown last (SAVE: USER); one that is not the family's any more (a page that moved, as GLOBAL
  * and SYSTEM in 1.2), or not shown for this track, gives the family's first */
 static void open_family(uint32_t fam)
@@ -648,14 +640,14 @@ static void go_home(void)
     help_start();
 }
 
-/* HOME tapped (1.2): HOME -> MIXER (up to 1.1.5 GLO's first page) -> CLOCK (up to 1.1.5 GLO > GLOBAL) -> HOME; from any
+/* HOME tapped (1.2): HOME -> OUTPUT -> CLOCK -> HOME; from any
  * other page HOME. HOME's pages are FAM_TRK's, in PAGES order, always from the first (none remembered). Held: the menu
  * (ui_input) */
 static void home_tap(void)
 {
     uint32_t i = ui.page + 1u;
     if (ui.home) {
-        ui.fam_last[FAM_TRK] = 0;                     /* (open_family: the family's first, the MIXER) */
+        ui.fam_last[FAM_TRK] = 0;                     /* (open_family: the family's first, OUTPUT) */
         open_family(FAM_TRK);
     } else if (cur_page()->fam == FAM_TRK && i < NPAGES && PAGES[i].fam == FAM_TRK) {
         open_family(FAM_TRK);                         /* (on HOME's page again: the next one) */
@@ -666,7 +658,7 @@ static void home_tap(void)
 
 /* MENU > CONTROL > SELECT PAGE (1.5.5, Discussion #188): the SELECT knob steps the pages of the family shown, a detent
  * each: right as a tap of the family's button does, left back, round (the pages that show for the track's engine);
- * HOME, MIXER and CLOCK are one round, as HOME's taps go. A family of one page (GLO's SONG) stays */
+ * HOME, OUTPUT and CLOCK are one round, as HOME's taps go. A family of one page (GLO's CLOCK) stays */
 static void page_turn(int32_t dir)
 {
     uint32_t fam = ui.home ? (uint32_t)FAM_TRK : cur_page()->fam, i, m = 0, at = 0;
@@ -709,7 +701,7 @@ static int seq_is_empty(const track_t *t)
  * load, or a sound edited after a pattern load, stay as they are. One copy for all tracks: the last
  * load wins. Loads in a row on one track with nothing changed in between (the PRESETS knob through the
  * list, one pattern after the other, an editor audition) keep the copy from before the first, so the
- * undo goes back past the whole browse. Not snapshotted: power-on, projects.
+ * undo goes back past the whole browse. Not snapshotted: power-on, the autosave, CLEAR ALL.
  * 1.1.5: a lock or automation edit by hand (a step held and a knob turned, a step's locks cleared, SEQ > AUTOMATION)
  * takes the copy too (UNDO_MOT: SAVE held puts the track's motion back, the sound and the steps stay; motion_undo_take).
  * A sound load keeps the track's motion on the parameters every engine has (load_end, motion.c motion_sound_loaded);
@@ -735,9 +727,8 @@ static uint8_t undo_depth;       /* loads nest (an engine jump loads its first p
 static uint32_t pat_sig[NTRK];   /* steps_sig of the pattern the last pattern load put into each track: such
                                   * steps, untouched, are replaced by the next pattern without asking */
 static uint8_t pat_last[NTRK];   /* that pattern's list index + 1, 0 = none */
-/* the header's slot letter (ui_draw.c head_slot): the PROJECT slot each track's working pattern came from (the last
- * PROJECT load or save: 1..4 = A..D; 0 none: power-on, a PHRASES pattern, the editor's restore) and pat_from_sig() of
- * it then: an edit since shows the letter with a mark */
+/* the header's slot letter (ui_draw.c head_slot): Felucca's PROJECT slot each track's pattern came from (1..4 = A..D,
+ * with pat_from_sig() of it then: an edit since marked). WaveStorm has no projects: always 0, no letter */
 static uint8_t pat_from[NTRK];
 static uint32_t pat_from_h[NTRK];
 static uint8_t load_from;        /* a sound load (the outer one): the engine before it (load_end) */
@@ -766,8 +757,7 @@ static uint32_t motion_sig(const track_t *t)     /* the track's motion only (the
         if ((motion.event[j].place >> 6) == k) h = fnv(h, &motion.event[j], sizeof motion.event[j]);
     return h ^ ((motion.on >> k) & 1u);
 }
-/* the track's pattern as a song plays it from a slot: the steps, LEN DIV SWING GATE, QUANTIZE, the automation (the
- * editable ones: while a song plays the header shows the section's slot instead) */
+/* the track's pattern: the steps, LEN DIV SWING GATE, QUANTIZE and the automation, hashed (the header's slot mark) */
 static uint32_t pat_from_sig(const track_t *t)
 {
     uint32_t h = fnv(steps_sig(t), &t->p[P_SLEN], 4u * sizeof t->p[0]);
@@ -810,7 +800,7 @@ static void mom_restore(void)                     /* LFO let go: every value bac
         *mom.vp[mom.n] = mom.v[mom.n];
     }
 }
-static void mom_back(const track_t *t)            /* a sound load into t (0: a project): its values back first */
+static void mom_back(const track_t *t)            /* a sound load into t (0: the whole part, the autosave): its values back first */
 {
     uint32_t i, k = 0;
     for (i = 0; i < mom.n; i++)
@@ -909,7 +899,7 @@ static void edit_undo_take(track_t *t, uint32_t tag, uint32_t what)
     undo.keep = 0;
 }
 static void motion_undo_take(track_t *t, uint32_t tag) { edit_undo_take(t, tag, UNDO_MOT); }
-/* 1.2: a step's CHANCE / RATCH edited on SEQ > AUTOMATION (ui_events.c): the swap puts back the steps (and LEN DIV
+/* 1.2: a step's VEL edited on SEQ > AUTOMATION (ui_events.c), a step cleared: the swap puts back the steps (and LEN DIV
  * SWING GATE, as copied) and the motion, the sound stays. motion_undo_done after each, as for a lock */
 static void step_undo_take(track_t *t, uint32_t tag) { edit_undo_take(t, tag, UNDO_MOT | UNDO_PAT); }
 static void motion_undo_done(track_t *t)
@@ -1027,8 +1017,8 @@ static void track_defaults_steps(track_t *t)
 /* SAVE > PHRASES: the factory patterns (PATTERNS[], "01".."13"), then the used user presets that hold
  * one ("U07"): list index n. Loading one replaces the track's steps 1..16 (the rest cleared) and LEN;
  * a user preset's pattern brings its stored LEN (at most 16), DIV, SWING and GATE too. The notes are
- * loaded as they are: the patterns are written for the register of their kind of sound, DRUM and
- * SLICE patterns are drum and slice numbers, and SCL TRANS / OCT transpose what plays */
+ * loaded as they are: the patterns are written for the register of their kind of sound, and SCL TRANS / OCT transpose
+ * what plays */
 static uint32_t pat_count(void) { return NPATTERNS + up_pat_count(); }
 
 static void pat_label(uint32_t n, char *tag, char *name)   /* tag: 4 bytes ("01", "U07"), name: 13 */
@@ -1054,12 +1044,12 @@ static void pat_load(track_t *t, uint32_t n)
         up_pat_load(t, up_pat_nth(n - NPATTERNS));
     pat_sig[trk_index(t)] = steps_sig(t);
     pat_last[trk_index(t)] = (uint8_t)(n + 1u);
-    pat_from[trk_index(t)] = 0;                     /* (a phrase: no PROJECT slot) */
+    pat_from[trk_index(t)] = 0;                     /* (no slot letter) */
     load_end(t);
     ui.force = 1;
 }
 
-/* a pattern load would throw away steps of the user's (recorded, edited, from a project): ask first */
+/* a pattern load would throw away steps of the user's (recorded, edited, from the autosave): ask first */
 static int pat_needs_confirm(const track_t *t)
 {
     return !seq_is_empty(t) && steps_sig(t) != pat_sig[trk_index(t)];
@@ -1084,9 +1074,8 @@ static void pat_load_ui(track_t *t, uint32_t n)
 }
 
 /* the track's settings, not the sound's: what a sound load (factory or user preset, an engine jump,
- * TOOLS INIT) leaves alone. The mix (LEVEL, PAN, MUTE: the TRACKS faders), the arpeggiator (ARP, ARP 2),
- * the scale and key map (SCL), the pattern parameters (LEN, DIV, SWING, GATE; 1.2: QUANTIZE) and the SLICER
- * insert, which chops whatever the track plays in time with its sequencer */
+ * TOOLS INIT) leaves alone. The mix (LEVEL, PAN, MUTE: HOME > OUTPUT), the arpeggiator (ARP, ARP 2),
+ * the scale and key map (SCL), the pattern parameters (LEN, DIV, SWING, GATE; 1.2: QUANTIZE) and the chord keys */
 static int param_kept(uint32_t i)
 {
     return i == P_LEVEL || i == P_PAN || i == P_MUTE || (i >= P_AMODE && i <= P_SGATE) ||
@@ -1094,7 +1083,7 @@ static int param_kept(uint32_t i)
 }
 
 /* the preset k stands for, the presets browsing shows before k, and how many it shows: every preset is its own (no
- * aliases: Felucca's SAMPLE kept retired ones) */
+ * aliases: Felucca kept some retired ones so) */
 static uint32_t preset_orig(const engine_t *e, uint32_t k) { (void)e; return k; }
 static uint32_t preset_rank(const engine_t *e, uint32_t k) { (void)e; return k; }
 #define preset_shown(e) (ENGINES[e]->npresets)
@@ -1161,9 +1150,8 @@ static void set_engine(uint32_t ei) { set_engine_of(TSEL, ei); }
 
 /* CLEAN INIT (1.5.5, #190): the engine's basic sound, nothing added: E1..E8 at the engine's own defaults (not its first
  * preset's), every other sound value at its default (TP: no FX sends DIST CHO DLY REV, INSERT OFF, no LFO or ENV DEST
- * amounts, the MOD slots off, no GLIDE, POLY), the ENV neutral (ATK 0, SUS 100 %, a short REL; DRUM: its kit's own, so
- * the hits ring as they should); FM6 the init voice (one sine carrier, ALGORITHM 1; SLOT OWN). What INIT keeps stays
- * (param_kept: LEVEL PAN MUTE, ARP, SCL, the sequence, SLICER, the chord keys); the steps stay. One undo, as INIT
+ * amounts, the MOD slots off, no GLIDE, POLY), the ENV neutral (ATK 0, SUS 100 %, a short REL), the filter
+ * OFF. What INIT keeps stays (param_kept: LEVEL PAN MUTE, ARP, SCL, the sequence, the chord keys); the steps stay. One undo, as INIT
  * (SAVE held). INIT itself is unchanged (the engine's defaults and its first preset) */
 #define CLEAN_REL 40                                   /* ~18 ms */
 static void clean_engine_of(track_t *t)
@@ -1188,9 +1176,7 @@ static void clean_engine(void) { clean_engine_of(TSEL); }
 
 /* MIDI Program Change (1.5.1, #179 by renebohne): program n on track t, as the PRESETS list numbers the engine's sounds
  * from 0: its n-th preset, the aliases skipped (preset_orig), loaded as from there (the track's own settings kept, one
- * undo for a run of them). DRUM: its n-th KIT, the retired variants skipped (enum_orig); FM6: its presets (F1..F8),
- * then the voice bank's B1..B32 through SLOT as the knob loads them (fm6_poll; the rest of the sound stays), an empty
- * one ignored. A program past the last is ignored, not wrapped: a number is always the same sound */
+ * undo for a run of them). A program past the last is ignored, not wrapped: a number is always the same sound */
 static volatile uint8_t *const mpc_io = ui.mpc;
 static void midi_pc_load(track_t *t, uint32_t n)
 {
@@ -1268,7 +1254,7 @@ static uint32_t preset_all_at(uint32_t n, uint32_t *k)
  * byte no engine uses (ui_lcat: 0 = none; firmware before reads ALL there, and favorites.filter stays 0 / 1 for it, the
  * editor and backups); the PRESETS knob and page browse that list */
 #define ui_lcat (favorites.factory[15][11])
-#define LIST_N (1u + CAT_N)                              /* ALL FAV BASS LEAD PAD PLUCK KEYS DRUM FX OTHER */
+#define LIST_N (1u + CAT_N)                              /* ALL FAV BASS LEAD PAD PLUCK KEYS DRUM FX OTHER (category.c) */
 static uint32_t list_mode(void) { return favorites.filter ? 1u : ui_lcat && ui_lcat < CAT_N ? 1u + ui_lcat : 0u; }
 static void list_set(uint32_t m)
 {
@@ -1394,7 +1380,7 @@ static uint32_t eng_list_pos(uint32_t *total)
     const engine_t *en = ENGINES[TSEL->eng_req % NENGINES];
     uint32_t e = TSEL->eng_req % NENGINES, np = preset_shown(e), u = user_of(TSEL), k, n = 0;
     uint32_t cur = np ? preset_rank(en, preset_orig(en, TSEL->preset % en->npresets)) : 0u;   /* (#124: the aliases
-                                        * skipped, as on PRESETS: SAMPLE 1 loads as 0, so counting it stuck KNOB 2) */
+                                        * skipped, as on PRESETS) */
     for (k = 0; k < UP_SLOTS; k++)
         if (up_used(k) && up_engine(k) == e) {
             if (k == u)
@@ -1472,7 +1458,7 @@ static void track_select(uint32_t i)
     ui.force = 1;
 }
 
-#include "ui_events.c"                            /* SEQ > AUTOMATION: locks, events, CHANCE, RATCH as a list (an action page) */
+#include "ui_events.c"                            /* SEQ > AUTOMATION: locks, events, VEL as a list (an action page) */
 #include "ui_wsedit.c"                            /* WaveStorm: EDIT > PATH .. SEQ SET, the sound's own path and sequences */
 #include "midi_learn.c"                           /* MIDI LEARN (1.5): GLO + D4, a knob, a CC */
 

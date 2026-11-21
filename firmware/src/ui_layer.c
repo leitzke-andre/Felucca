@@ -1,28 +1,23 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* Felucca quick layers: while a page button is held, the keys and KNOB 1..4
+/* The quick layers (Felucca's): while a page button is held, the keys and KNOB 1..4
  * are its shortcuts and its map shows over the page. One table (LAYERS) drives the gesture, the keys, the knobs,
  * the LEDs and the overlay:
  *   FX   HOLD  the performance effects (perform.c) and the track mutes while held; KNOB 1..4 its macros. The white
  *              keys' effects are the user's (1.2): a white key held in the layer (FX held or locked) + PRESETS turned
  *              steps that key through NONE and the effects (it holds the new one at once), EDIT puts the key's default
  *              back; kept with the settings (fx_keys) when the layer closes
- *   GLO  SET   black keys 1..4 (F#3 G#3 A#3 C#4) T1..T4 MUTE (latched; lit = sounding), F3..B3 SOLO T1..T4 while
- *              held (HOLD cells, a corner triangle), C4 UNMUTE ALL, D4 MIDI LEARN on / off (1.5, midi_learn.c), F4 TAP
- *              tempo; KNOB 1..4 T1..T4 LEVEL;
+ *   GLO  SET   black key 1 (F#3) the part's MUTE (latched; lit = sounding), F3 its SOLO while held (HOLD cells, a
+ *              corner triangle; Felucca's keys for tracks 2..4 do nothing with one part), C4 UNMUTE, D4 MIDI LEARN on /
+ *              off (1.5, midi_learn.c), F4 TAP tempo; KNOB 1 the part's LEVEL;
  *              GLO + PLAY: from the top without stopping
  *   SCL  SET   any key: its note name is ROOT; KNOB 1..4 ROOT SCL CHRD VOIC (LY_SCL: the SCL page's first two,
  *              the CHORD page's two; QNT TRN stay on SCL); the LEDs show the root lit and the scale's notes breathing
- *   EDIT SET   the white keys from F3: the engines in PRESETS order (one key each, the first LY_ENG_KEYS (13) one can
- *              pick: engines.c eng_vis; ADPCM, last, only with PRESETS' ENG knob), the next white key INIT (LY_INIT: E5),
- *              the next CLEAN INIT (LY_CLEAN: F5, 1.5.5)
+ *   EDIT SET   the white keys from F3: the engines in PRESETS order (one key each, LY_ENG_KEYS: WaveStorm's one, STORM,
+ *              on F3), the next white key INIT (LY_INIT: G3), the next CLEAN INIT (LY_CLEAN: A3, 1.5.5)
  *              (the dialog); KNOB 1 ENG, 2 No. (the engine's sounds), 3 FAV. Sound loads as on PRESETS: the steps
  *              stay, SAVE held undoes, the editor gets RELOAD; they apply while playing too
- *   SEQ  SET   (1.2, on every page; up to 1.1.5 SEQ held opened SONG) TOOLS: the white keys from F3 the sequence tools
- *              (ui_tools.c: CLEAR, REVERSE, SHIFT < >, RANDOM, COOK, 1.5.5 EUCLID (F4) DOUBLE HALF (D5 E5); on a DRUM track BEAT and the
- *              lane's CLEAR REVERSE FILL RANDOM), black keys 1..8 the lane (DRUM); KNOB 1..4 LEN DIV SWING GATE (the
- *              PATTERN page's up to 1.1.5: the page is gone, they are here; EUCLID open: HITS STEPS ROT, OCT+ applies,
- *              OCT- cancels). Each action one undo (SAVE held), OCT- the track as the layer opened (rec_open)
+ *   (SEQ: no layer in WaveStorm; Felucca's SEQ TOOLS went with its drum lanes. SEQ's tap opens its pages)
  *   REC  SET   (1.1.5, on every page; REC's tap still arms / disarms) the white keys from F3: CLEAR (the selected
  *              track's steps and automation, no dialog: one undo, SAVE held), CLICK (OFF REC ON), COUNT-IN (OFF 1 BAR
  *              2 BARS), CLICK LEVEL (LOW MID HIGH), each press the next value; KNOB 1..3 the same three. The settings
@@ -46,7 +41,7 @@
  * always), the menu, a dialog, NAME. The first tap is not deferred (a single tap opens its page at once, no lag): it
  * opens the page and remembers the page it left (lys.nv); the second tap locks the layer over that page, put back, so
  * a double tap leaves the page as it was. A first tap that acted instead of opening a page (EDIT on STEP: clear the
- * step; on USER / PROJECT: rename) arms no double tap: two quick taps there still act twice. */
+ * step; on USER: rename) arms no double tap: two quick taps there still act twice. */
 /* REC's layer: the track as it opened (OCT- puts it back) and the undo copy of it */
 static struct { step_t step[NSTEP]; motion_store_t mo; } rec_open __attribute__((section(".pool")));
 static void rec_undo_take(track_t *t)            /* (ui.c load_begin, but the automation is copied and stays) */
@@ -87,11 +82,9 @@ static const page_t *ly_page(uint32_t l) { return l == LAYER_SCL ? &LY_SCL : 0; 
 #define LY_OPEN 2u                     /* ui.ly_t0: the map opened (no tap any more) */
 #define LY_COMBO 4u                    /* .. by a combo */
 #define LY_DEAD 8u                     /* .. pressed where there is no layer: does nothing */
-#define LY_ENG_KEYS ((uint32_t)NENG_SHOWN)   /* EDIT: white keys for the engines before ADPCM (1.8: last
-                                        * in engines.c ENGINE_ORDER, picked with PRESETS' ENG knob), so INIT and CLEAN INIT
-                                        * stay where they were: 13 engines from F3, INIT E5 (14 and F5 with FELUCCA_FM4) */
-#define LY_INIT LY_ENG_KEYS            /* .. INIT, the white key after them */
-#define LY_CLEAN (LY_INIT + 1u)         /* .. and CLEAN INIT's, the next (1.5.5, #190: F5) */
+#define LY_ENG_KEYS ((uint32_t)NENG_SHOWN)   /* EDIT: a white key for each engine (WaveStorm: STORM, F3) */
+#define LY_INIT LY_ENG_KEYS            /* .. INIT, the white key after them (G3) */
+#define LY_CLEAN (LY_INIT + 1u)         /* .. and CLEAN INIT's, the next (1.5.5, #190: A3) */
 typedef char ly_init_fits[LY_CLEAN < 16u ? 1 : -1];   /* (a white key: F3 .. G5) */
 #define layer_seen (favorites.factory[15][31])   /* bit l: layer l opened once (a byte no engine uses) */
 static const khint_t FX_LATCH_FOOT[3] = {{KC_KEYS, "ON / OFF"}, {KC_K14, "MACROS"}, {KC_OCTDN, "ALL OFF"}};
@@ -313,7 +306,7 @@ static void layer_show(void)
 }
 
 /* a tap: the button's page; the hint until its layer has been opened once (unless the tap said something, or
- * opened NAME: EDIT on USER / PROJECT renames; never over a dialog or the menu) */
+ * opened NAME: EDIT on USER renames; never over a dialog or the menu) */
 static void layer_tap(uint32_t l)
 {
     uint8_t m = ui.msg_t;
@@ -389,7 +382,7 @@ static void glo_tap(void)
 
 
 /* REC: CLEAR, the selected track's steps and automation (and ARP's latched chord): one undo (SAVE held), no dialog,
- * as SEQ TOOLS' CLEAR (up to 1.1.4 REC held on SEQ asked first, CF_CLEAR_SEQ). Its own undo copy (not a sound load's) */
+ * (up to 1.1.4 REC held on SEQ asked first, CF_CLEAR_SEQ). Its own undo copy (not a sound load's) */
 static void rec_clear(void)
 {
     track_t *t = TSEL;
@@ -554,7 +547,7 @@ static void layer_knob(uint32_t k, int32_t s)
         if (k == 3u && !perf_harm_on())
             s = -s;                                     /* DEPTH (100 - perf_k[3]) rises to the right (#40: it fell) */
         perf_k[k] = (int8_t)clamp(perf_k[k] + accel(EN_K1 + k, s, k ? 100 : 200), k ? 0 : -100, 100);   /* (#126) */
-    } else if (l == LAYER_GLO) {                        /* T1..T4 LEVEL, recorded as on MIXER */
+    } else if (l == LAYER_GLO && k < NTRK) {            /* the part's LEVEL (Felucca: T1..T4's), recorded */
         int16_t *vp = &trk[k].p[P_LEVEL];
         *vp = (int16_t)clamp(*vp + accel(EN_K1 + k, s, TP[P_LEVEL].max - TP[P_LEVEL].min), TP[P_LEVEL].min,
                              TP[P_LEVEL].max);
@@ -691,7 +684,7 @@ static uint32_t layer_leds(uint32_t *br)
             can = p < NENG_SHOWN && p < LY_INIT ? 1u : (p == LY_INIT || p == LY_CLEAN);
         } else if (l == LAYER_REC && !b && p < 4u) {    /* a setting on (LEVEL: the click on) lit, the rest breathe; */
             on = p == 1u ? rp_get(RP_CLICK) != 0u : p == 2u ? rp_get(RP_COUNTIN) != 0u :   /* CLEAR: something to */
-                 p == 3u && rp_get(RP_CLICK) != 0u;    /* clear, not while a song plays */
+                 p == 3u && rp_get(RP_CLICK) != 0u;    /* clear */
             can = p ? 1u : rec_clearable();
         }
         m |= on << k;
@@ -893,7 +886,7 @@ static void layer_rec(void)
         cv_icon_in(x + 15, y, 0, LR_H, 12, r ? RL_ICON[r - 1u] : ICON_CLEAR, ink, fill);
         GFX_HOOK_ALIGN(0, y, 0, y + LR_H, AL_V, "rec layer key cell on its middle");
         cv_text_r(x + LR_KW - 5, y + CAP_IN(S, LR_H), &AF_S, r ? RL_LABEL[r - 1u] : "CLEAR", ink, fill);
-        if (r == 0u) {                                   /* "T2 SEQUENCE" / "T2 EMPTY" (a song playing: why not) */
+        if (r == 0u) {                                   /* "T1 SEQUENCE" / "T1 EMPTY" */
             int32_t w = 234 - vx;
             b[0] = 'T';
             b[1] = (char)('1' + song.sel);
@@ -935,7 +928,7 @@ static void layer_cards(uint32_t l)
             fmt_int(val, 100 - perf_k[3]);
             draw_column(3, "DEPTH", val, "%", VAL(3u), (100 - perf_k[3]) * 10, ICON_MIX);
         }
-    } else if (l == LAYER_GLO) {                        /* T1..T4 LEVEL (the track's icon; muted: dim) */
+    } else if (l == LAYER_GLO) {                        /* the part's LEVEL (the track's icon; muted: dim) */
         for (c = 0; c < NTRK; c++) {
             param_format(&TP[P_LEVEL], trk[c].p[P_LEVEL], val, &unit);
             draw_column(c, "LEVEL", val, unit, glo_sounding(c) ? VAL(c) : T_DIM, RATIO(&TP[P_LEVEL], trk[c].p[P_LEVEL]),

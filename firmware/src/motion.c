@@ -5,9 +5,9 @@
  * p[] is the sounding value; motion_base_value() is the patch's saved value.
  * Two kinds of record share the MOTION_MAX (core.h MOTION_LOCK): an automation event sets its value at its step and the value
  * holds (to the next event, the loop's restart, a stop); a parameter lock (1.1, Discussions #75 / #53: hold a step,
- * turn a knob) sets its value at its step only when the step plays (its chance passed) and the next step puts back
- * what would sound without it: the latest automation event of the pass up to that step, else the sound's own value
- * (motion_unlock). A lock lasts the whole step, its RATCH parts too; swing only moves the step's start. */
+ * turn a knob) sets its value at its step only when the step plays and the next step puts back what would sound
+ * without it: the latest automation event of the pass up to that step, else the sound's own value (motion_unlock).
+ * A lock lasts the whole step; swing only moves the step's start. */
 static motion_store_t motion;
 static int16_t motion_base[NTRK][P_COUNT];
 static uint32_t motion_active[NTRK][(P_COUNT + 31u) / 32u];
@@ -38,10 +38,12 @@ static int motion_param(uint32_t id)
     return id < P_COUNT && (id <= P_REL || (id >= P_ED_FLT && id <= P_LD_AMP) ||
         (id >= P_DIST && id <= P_REV) || id == P_GLIDE || id == P_PAN ||
         id == P_DETUNE ||
-        id == P_SPRD || (id >= P_ITYPE && id <= P_IMIX) || id >= P_E0);   /* (not the chord keys, nor 1.2's LFO SYNC TRIG
-                                        * POL and QUANTIZE, nor 1.5's filter TYPE and ENV SYNC: settings; the DRUM lane
-                                        * levels, SPREAD (#148: continuous, as PAN), 1.5's INSERT (TYPE too: a lock
-                                        * switches it for a step, fx.c track_insert fades over), E0..E7) */
+        id == P_SPRD || (id >= P_ITYPE && id <= P_IMIX) || (id >= P_CUT && id <= P_FKEY) || id >= P_E0);
+                                       /* (not the chord keys, nor 1.2's LFO SYNC TRIG POL and QUANTIZE, nor ENV SYNC
+                                        * or WaveStorm's filter TYPE: settings (a TYPE switched on a step would click);
+                                        * SPREAD (#148: continuous, as PAN), 1.5's INSERT (TYPE too: a lock switches it
+                                        * for a step, fx.c track_insert fades over), the filter's CUT RES KEY, E0..E7:
+                                        * X / Y per step) */
 }
 static int motion_valid(const motion_store_t *m)
 {
@@ -69,7 +71,7 @@ static uint32_t motion_lock_count(const track_t *t)
     for (i = 0; i < motion.count; i++) n += (motion.event[i].place >> 6) == k && (motion.event[i].param & MOTION_LOCK);
     return n;
 }
-/* the steps of track k that hold a lock, bit s = step s (the roll and the grid mark them) */
+/* the steps of track k that hold a lock, bit s = step s (the roll marks them) */
 static uint64_t motion_lock_steps(uint32_t k)
 {
     uint32_t i;
@@ -171,7 +173,7 @@ static int motion_put(track_t *t, uint32_t step, uint32_t id, int16_t value, uin
     if (k >= NTRK || step >= NSTEP || !motion_param(id)) return 1;
     d = param_desc_of(eng_idx(t->eng_req), id);
     if (value < d->min || value > d->max || value < -64 || value > 127) return 1;
-    value = (int16_t)param_fit(d, value);                    /* (a retired KIT: the kit it plays) */
+    value = (int16_t)param_fit(d, value);
     f = motion_guard();
     for (i = 0; i < motion.count; i++)
         if (motion.event[i].place == (k << 6 | step) && MOTION_ID(&motion.event[i]) == id) break;

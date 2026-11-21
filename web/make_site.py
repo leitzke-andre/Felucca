@@ -4,13 +4,13 @@
 """Make the site (GitHub Pages):
 
   index.html                  redirect to the installer (the old URL keeps working)
-  firmware/felucca-VER.fwsc   the package (+ LICENSE, LICENSING.md, LICENSES/: the package holds
+  firmware/wavestorm-VER.fwsc the package (+ LICENSE, LICENSING.md, LICENSES/: the package holds
                               JieLi SDK files under Apache-2.0, see LICENSING.md)
   webapp/installer/index.html index_pkg.html, self-contained (fm1pkg.js, fm1ota.js, metadata inlined)
-  webapp/editor/index.html    editor.html (+ fukiai.ttf, FUKIAI-LICENSE.txt)
   src/                        not touched
+(WaveStorm has no web editor: Felucca's editor.html and its backups are not in this tree.)
 
-  web/make_site.py build/felucca-X.Y.fwsc X.Y OUT_DIR
+  web/make_site.py build/wavestorm-X.Y.fwsc X.Y OUT_DIR
 
 The package must be one made by tools/fm1pkg_make.py (Felucca's own loader, no vendor files).
 Its identity (FM-1_9xx) is read from the package; the device must report it after
@@ -47,18 +47,17 @@ def main(pkg, version, out):
                          "(a package patched from an official one carries vendor files)")
     html = (HERE / "index_pkg.html").read_text(encoding="utf-8")
     lib = strip_module((HERE / "fm1pkg.js").read_text(encoding="utf-8")) + "\n" + \
-        strip_module((HERE / "fm1ota.js").read_text(encoding="utf-8")) + "\n" + \
-        strip_module((HERE / "fm1backup.js").read_text(encoding="utf-8"))
-    name = f"felucca-{re.sub(r'[^A-Za-z0-9.-]', '-', version)}.fwsc"
+        strip_module((HERE / "fm1ota.js").read_text(encoding="utf-8"))
+    name = f"wavestorm-{re.sub(r'[^A-Za-z0-9.-]', '-', version)}.fwsc"
     meta = json.dumps({"version": version, "product": product, "pkg": "../../firmware/" + name})
     for mark in ("/*LIB*/", "/*META*/"):
         if html.count(mark) != 1:
             raise SystemExit(f"index_pkg.html must contain {mark} once; update make_site.py")
     html = html.replace("/*LIB*/", lib).replace("/*META*/", meta)
-    inst, ed, fw = out / "webapp" / "installer", out / "webapp" / "editor", out / "firmware"
-    for d in (inst, ed, fw):
+    inst, fw = out / "webapp" / "installer", out / "firmware"
+    for d in (inst, fw):
         d.mkdir(parents=True, exist_ok=True)
-    for old in fw.glob("felucca-*.fwsc"):          # one package: the current one
+    for old in fw.glob("wavestorm-*.fwsc"):        # one package: the current one
         old.unlink()
     (inst / "index.html").write_text(html, encoding="utf-8")
     shutil.copy(pkg, fw / name)
@@ -68,21 +67,17 @@ def main(pkg, version, out):
     for n in names:
         shutil.copy(lic / n, fw / "LICENSES" / n)
     (fw / "LICENSES" / "index.html").write_text(    # the installer links this folder: Pages lists no folders
-        '<!doctype html><meta charset="utf-8"><title>Felucca licences</title><h1>Licence texts</h1><ul>'
+        '<!doctype html><meta charset="utf-8"><title>WaveStorm licences</title><h1>Licence texts</h1><ul>'
         + "".join(f'<li><a href="{n}">{n}</a></li>' for n in names)
         + '</ul><p><a href="../LICENSING.md">LICENSING.md</a> · <a href="../LICENSE">LICENSE (GPL-3.0)</a></p>\n',
         encoding="utf-8")
     for doc in ("LICENSE", "LICENSING.md"):
         shutil.copy(HERE.parent / doc, fw / doc)
-    shutil.copy(HERE / "editor.html", ed / "index.html")
-    for f in ("fukiai.ttf", "FUKIAI-LICENSE.txt", "fm1backup.js"):
-        if (HERE / f).exists():
-            shutil.copy(HERE / f, ed / f)
     (out / "index.html").write_text(
-        '<!doctype html><meta charset="utf-8"><title>Felucca</title>'
+        '<!doctype html><meta charset="utf-8"><title>WaveStorm</title>'
         '<meta http-equiv="refresh" content="0; url=webapp/installer/">'
-        '<a href="webapp/installer/">Felucca installer</a>\n', encoding="utf-8")
-    print(f"site: {out}: webapp/installer ({len(html)} B), webapp/editor, firmware/{name} ({len(raw)} B, {product})")
+        '<a href="webapp/installer/">WaveStorm installer</a>\n', encoding="utf-8")
+    print(f"site: {out}: webapp/installer ({len(html)} B), firmware/{name} ({len(raw)} B, {product})")
 
 
 if __name__ == "__main__":

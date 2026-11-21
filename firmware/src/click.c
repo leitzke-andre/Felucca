@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* The metronome's click (1.1, Ideas Discussion #131): MENU > AUDIO CLICK (OFF / REC / ON), CLICK LEVEL (LOW / MID / HIGH)
- * and COUNT-IN (OFF / 1 BAR / 2 BARS). seq.c decides when a beat clicks (click_beat: the song tempo's quarter notes, 4/4,
+ * and COUNT-IN (OFF / 1 BAR / 2 BARS). seq.c decides when a beat clicks (click_beat: the tempo's quarter notes, 4/4,
  * the bar's first beat accented; the count-in's beats whatever CLICK is); this file makes the sound. A short sine blip
  * that decays away (no sample): 1760 Hz on the bar's first beat, 1320 Hz on the others, 6 dB quieter; ~6 ms
  * decay constant, silent after ~35 ms. It is added after the master (audio.c audio_block, after uac_tap and USB LEVEL):

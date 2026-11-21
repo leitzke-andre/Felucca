@@ -1,11 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 #define FELUCCA_FAVORITES 1
-/* Stable engine/preset references; fixed capacity independent of optional engines. Engines 0..13 have a row of
+/* Stable engine/preset references (Felucca's layout, kept so settings stay readable): engines 0..13 have a row of
  * favourites each (a bit per factory preset); rows 14 and 15 hold the MIDI LEARN map (midi_learn.c) and settings
- * (settings_persist.c), so an engine from 14 on keeps its favourites in a settings byte of its own: ADPCM (1.8, 8
- * presets) in factory[15][13], a byte no firmware before it used (kept there as saved); STORM (15, up to 24 presets) in
- * factory[13][28..30], past SLICE's two presets */
+ * (settings_persist.c). STORM (WaveStorm's engine 0, up to 24 presets) keeps its favourites in factory[13][28..30], a
+ * place no Felucca engine reached, so Felucca's own favourites on a unit do not show as STORM's */
 #define FAV_ENGINES 14u
 typedef struct {
     uint8_t factory[16][32]; /* engine 0..15, preset 0..255 */
@@ -18,8 +17,7 @@ static uint8_t *fav_bit(uint32_t engine, uint32_t preset, uint8_t *mask)   /* th
         *mask = (uint8_t)(1u << (preset % 8u));
         return &favorites.factory[engine][preset / 8u];
     }
-    if (engine == ENGI_WAVESTORM && preset < 24u) {     /* STORM (WaveStorm): the end of SLICE's row, bytes 28..30 (SLICE
-                                                         * would need 224 presets to reach them) */
+    if (engine == ENGI_WAVESTORM && preset < 24u) {     /* STORM (WaveStorm): bytes 28..30 of row 13 */
         *mask = (uint8_t)(1u << (preset % 8u));
         return &favorites.factory[13][28u + preset / 8u];
     }

@@ -70,7 +70,7 @@ Build options (environment, `0` or `1`; defaults in `firmware/src/felucca.c`, `c
 
 | Flag | Default | |
 | --- | --- | --- |
-| `FELUCCA_FLASH` | 1 | settings, presets and projects in flash |
+| `FELUCCA_FLASH` | 1 | settings, user presets and the autosave in flash |
 | `FELUCCA_OTA` | 1 | update entry (needs `FELUCCA_FLASH`) |
 | `FELUCCA_CDC` | 1 | USB serial console |
 | `FELUCCA_CDC_DEFAULT` | 1 | `0`: the console is built in but left out of USB from boot (as MENU > USB SERIAL OFF) |
@@ -127,8 +127,8 @@ Or, to install your own build from the web installer, make a local copy of the s
 (Web MIDI needs a secure context):
 
 ```
-python3 web/make_site.py build/wavestorm.fwsc dev /tmp/felucca-site
-cd /tmp/felucca-site && python3 -m http.server 8000
+python3 web/make_site.py build/wavestorm.fwsc dev /tmp/wavestorm-site
+cd /tmp/wavestorm-site && python3 -m http.server 8000
 # open http://localhost:8000/webapp/installer/
 ```
 

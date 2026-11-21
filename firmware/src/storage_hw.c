@@ -25,11 +25,8 @@ static void audio_silence(void)                 /* IRQs off: the DMA would loop 
     for (i = 0; i < sizeof abuf / sizeof abuf[0]; i++)
         abuf[i] = 0;
 }
-/* the store: fm1_flash.h FL_STORE_OK, and the FM6 voice bank (fm6_vbank.c FVB_HOME, 1.4.1): one sector at 0xE7000, the first
- * of felucca-bsp's FL_XDATA1 (a firmware's own data), which Felucca uses for nothing else */
-#define ST_VBANK_LO 0x000E7000u
-#define ST_VBANK_HI 0x000E8000u
-#define ST_OK(off, n) (FL_STORE_OK(off, n) || FL_IN(off, n, ST_VBANK_LO, ST_VBANK_HI))
+/* the store: fm1_flash.h FL_STORE_OK (Felucca also allowed its FM6 voice bank's sector, 0xE7000: not used here) */
+#define ST_OK(off, n) FL_STORE_OK(off, n)
 static int st_erase(uint32_t off)
 {
     uint32_t took, f;

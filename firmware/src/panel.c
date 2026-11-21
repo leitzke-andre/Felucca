@@ -5,7 +5,7 @@
  * the mapping is a table with a best guess, overridable by HARDWARE CALIBRATION
  * (hold OCT- and OCT+ while powering on): FELUCCA asks for each label in turn.
  * The learned table lives in .noinit and, with FELUCCA_FLASH, in flash with
- * the settings (project.c); read it back with `fm1t memr` to bake it in. */
+ * the settings (settings_persist.c); read it back with `fm1t memr` to bake it in. */
 enum { B_FX, B_SCL, B_ENV, B_LFO, B_EDIT, B_GLO, B_HOME, B_SAVE, B_ARP, B_SEQ, B_PLAY, B_REC,
        B_OCTDN, B_OCTUP, NB };
 enum { EN_SELECT, EN_ALGO, EN_PRESET, EN_K1, EN_K2, EN_K3, EN_K4, NE };
@@ -71,7 +71,7 @@ static int32_t panel_enc(uint32_t role)
 #define SETTINGS_MAGIC_OLD 0x53455433u          /* "SET3" */
 struct { uint32_t magic, palette, lowcut, zoom; } settings __attribute__((section(".noinit")));
 
-static void settings_save(void);              /* project.c: flash copy (FELUCCA_FLASH) */
+static void settings_save(void);              /* settings_persist.c: flash copy (FELUCCA_FLASH) */
 
 /* HOLD (menu): how long a button is held before its layer opens (ui_input.c). Saved in the settings record's
  * retired bold field as HOLD_TAG | index; any other value there (0 or 1 from older firmware) is the default */
@@ -84,7 +84,6 @@ static uint32_t hold_to_stored(uint32_t old, uint32_t i)
 {
     return i % 4u != HOLD_DEF ? HOLD_TAG | (i & 3u) : old > 1u ? 0u : old;
 }
-static int hold_stored_ok(uint32_t v) { return v <= 1u || (v & ~3u) == HOLD_TAG; }
 
 /* LEDS (menu): OFF, DIM LO, DIM HI, INV. DIM HI (the default), the idle buttons and keys glow dim (~1/30) and the
  * active ones are lit (#35); DIM LO the same, darker (~1/60, bsp/boards/fm1/fm1_input.h FM1_LED_DIM_LO_NS); OFF no glow,
@@ -101,16 +100,6 @@ static uint32_t leds_from_stored(uint32_t v) { return (v & ~3u) == LEDS_TAG && (
 static uint32_t leds_to_stored(uint32_t old, uint32_t m)
 {
     return m != LEDS_DIM && m < LEDS_COUNT ? LEDS_TAG | m : old > 1u ? 0u : old;
-}
-static int leds_stored_ok(uint32_t v) { return v <= 1u || ((v & ~3u) == LEDS_TAG && (v & 3u) < LEDS_COUNT); }
-/* the menu's next / previous mode (KNOB 1 stops at the ends, OCT+ (s 0) cycles) */
-static uint32_t leds_step(uint32_t m, int32_t s)
-{
-    uint32_t i = 0;
-    while (i + 1u < LEDS_COUNT && LEDS_MENU[i] != m)
-        i++;
-    i = s > 0 ? (i + 1u < LEDS_COUNT ? i + 1u : i) : s < 0 ? (i ? i - 1u : 0u) : (i + 1u) % LEDS_COUNT;
-    return LEDS_MENU[i];
 }
 
 static void palette_apply(void);               /* (ui.c: the palette in use, CUSTOM or a built-in one) */

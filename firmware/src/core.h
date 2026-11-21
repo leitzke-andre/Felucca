@@ -1,9 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* FELUCCA core types: tracks, voices, engines, parameters.
- * Four tracks, each a synth part: its own engine, preset, parameters, voices and 64-step
- * pattern. The parts share one budget of NVOICE sounding voices (voice.c). Drums are the DRUM
- * engine (General MIDI map) on any part; the SAMPLE engine's PERC set is retired (drum_from_perc).
+/* Core types (Felucca's): tracks, voices, engines, parameters.
+ * Tracks are synth parts, each with its own engine, preset, parameters, voices and 64-step pattern, sharing one
+ * budget of NVOICE sounding voices (voice.c). WaveStorm has one part (NPART, NTRK 1) playing the STORM engine.
  * Sections: sizes, parameters, voices and engines, tracks and the song, system. */
 #include <stdint.h>
 
@@ -71,18 +70,16 @@ enum {                          /* global parameters */
                                  * unused (ids are fixed by the formats and the protocol) */
     G_CLRSEQ, G_INITSND,
     G_RTYPE,                    /* REVERB TYPE: 0 ROOM, 1 SPRING, 2 HALL (1.2, the power-on default) (fx.c). Was
-                                 * G_DRCH, the GM drum part's MIDI channel (inert since 1.0, never read); projects
-                                 * of formats before FUN7 load it as ROOM (project.c proj_rtype_room) */
-    G_DRLVL, G_DRREV,           /* inert (label "-", on no page): the GM drum part they set is gone; kept
-                                 * because the ids and G_COUNT are fixed by the formats and the protocol (only
-                                 * the import of an old project reads them: proj_drums_to_part) */
+                                 * G_DRCH, Felucca's GM drum part's MIDI channel (inert since 1.0) */
+    G_DRLVL, G_DRREV,           /* inert (label "-", on no page): Felucca's GM drum part they set is long gone;
+                                 * kept so the ids, which the editor protocol uses, do not move */
     G_COUNT
 };
 
 /* stored parameters of an older layout -> today's P_* order. A store keeps np = the P_COUNT it was
  * written with; common parameters are only ever added just before P_E0, so the first np - 8 are
  * P_LEVEL.. in order and the last 8 are P_E0..P_E7; the parameters a store does not have take def[]
- * (user presets, projects of formats 1 and 2) */
+ * (user presets of an older P_COUNT) */
 static void params_by_count(int16_t *out, const int16_t *in, uint32_t np, const int16_t *def)
 {
     uint32_t i, nc = np - 8u;
@@ -109,8 +106,8 @@ typedef struct {                 /* acid-style step: up to 4 notes (POLY), time,
     uint8_t vel;
 } step_t;
 #define MOTION_MAX 128u          /* 1.2 (FUN10): 64 before */
-/* Four tracks x64 steps fit one byte. Values retain their signed parameter range (-64..127: an int8_t, 1.2).
- * param: the P_* id (< 128: P_COUNT is at most 127, project.c), bit 7 (MOTION_LOCK, 1.1) a parameter lock: the value
+/* place: track << 6 | step (Felucca's four tracks x 64 steps fit one byte). Values retain their signed parameter range
+ * (-64..127: an int8_t, 1.2). param: the P_* id (< 128: P_COUNT is at most 127), bit 7 (MOTION_LOCK, 1.1) a parameter lock: the value
  * sounds on that step only and goes back after it (motion.c motion_step); without it an automation event, the
  * value holds until another one changes it. One record per (track, step, id), of either kind */
 #define MOTION_LOCK 0x80u
@@ -152,7 +149,6 @@ typedef struct track {
     uint8_t seq_hold;            /* last step slides: keep the notes until the next step */
     uint8_t slide_glide;         /* next legato note glides (slide) */
     uint32_t seq_off;
-    uint8_t seq_active;          /* any step programmed */
     uint8_t rskip_idx;           /* live recording put notes into the step about to play: */
     uint8_t rskip_n, rskip[4];   /* do not trigger them again there (they sound already) */
     /* the matrix's TIME (seq.c seq_play_on): a step plays late. Latched as a step starts: */
@@ -181,7 +177,7 @@ typedef struct track {
     uint8_t spread_on;           /* SPREAD this block (fx.c mix_part, voice.c track_render) */
     uint8_t rsv_sz[15];          /* (sizeof(track_t) a multiple of 16: below; the filter's 4 parameters took 8) */
 #else
-    uint8_t rsv_sz[12];          /* (sizeof(track_t) a multiple of 16: below; the filter's 4 parameters took 8) */
+    uint8_t rsv_sz[13];          /* (sizeof(track_t) a multiple of 16: below; the filter's 4 parameters took 8) */
 #endif
     int16_t armp, aholdp;        /* P_AMODE / P_AHOLD as last seen by the ISR */
     /* engine switch (voice.c engine_block): the old engine's voices fade out, then it switches */
@@ -204,8 +200,8 @@ _Static_assert(sizeof(track_t) % 16u == 0, "track_t: a multiple of 16 bytes (a c
 typedef struct {
     int16_t g[G_COUNT];
     uint8_t playing, seq_mode;
-    uint8_t grid;                /* 1: the keys are the DRUM grid (ui.c grid_on): only the lane keys play (seq.c);
-                                  * 2: NAME (ui_name.c): no key plays; 3: SONG, A..D are its (seq.c song_key) */
+    uint8_t grid;                /* the keys' mode (ui_name.c keys_mode): 0 notes, 2 NAME (no key plays); Felucca's 1
+                                  * (its drum grid) and 3 (its SONG keys) are not used */
     uint8_t rec;                 /* live recording armed: bit per track */
     uint8_t sel;                 /* selected track 0..NTRK-1: keys, pages, editor */
     int8_t octave;
@@ -216,16 +212,16 @@ typedef struct {
 } song_t;
 #define ROUTE_OMNI 16                /* G_ROUTE: MIDI IN, the channel 0..15 the part hears, or every channel */
 
-/* WaveStorm: one part (NTRK 1) that everything plays and loops over, in an array of four: Felucca's views that name four
- * tracks (the GLO layer, HOME's levels, the editor's track arguments: not offered in WaveStorm) would read an idle,
- * silent track rather than past the array, should one still be reached */
+/* WaveStorm: one part (NTRK 1) that everything plays and loops over, in an array of four: code still sized for
+ * Felucca's four tracks (the editor's track arguments, the GLO layer's opening copy) reads an idle, silent track
+ * rather than past the array */
 #define NTRK_ALLOC 4u
 static track_t trk[NTRK_ALLOC];
 static song_t song;
 #define TSEL (&trk[song.sel])    /* the selected track */
 
 /* SWING of a track's step clock: the track's own plus the global one, at most 100 (#31). The sequencer
- * (seq.c step_samples) and the SLICER (slicer.c sl_enter) both time steps with it. At 100 the even
+ * (seq.c step_samples) times steps with it. At 100 the even
  * steps are 1.4 x the straight length and the odd ones 0.6 x. */
 #define SWING_MAX 100
 static inline int32_t track_swing(const track_t *t)

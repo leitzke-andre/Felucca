@@ -443,7 +443,7 @@ static uint32_t ws_inc(const vmod_t *m, int32_t semi)
 }
 
 /* the voice filter (P_FTYPE LP / BP / HP): Felucca-Engines' trapezoidal SVF (dsp.c tsvf_*, A. Simper) with its three
- * taps, as ANALOG writes it out: LP v2, BP v1, HP in - k v1 - v2. At the cutoff the three peak alike (1/k: 2 at RES 0,
+ * taps, as Felucca's ANALOG writes it out: LP v2, BP v1, HP in - k v1 - v2. At the cutoff the three peak alike (1/k: 2 at RES 0,
  * ~0.15 at 127); linear to half scale, then a soft knee, so only resonance peaks saturate. CUTOFF (0..127) plus the
  * voice's FLT modulation (ENV, LFO, the matrix's CUT: m->cutoff) plus KEY tracking from C4; the state in s[5], s[6] */
 static void ws_filter(const int16_t *p, voice_t *v, int32_t *acc, uint32_t n, const vmod_t *m)
